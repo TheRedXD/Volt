@@ -9,3 +9,6 @@ Additionally, you can also open issues with the DAW.
 ## Current state
 The DAW at the moment is highly unfinished, and is currently primarily in the testing phase.
 If anyone is able to volunteer for improving the DAW, please do! PRs are super welcome.
+
+Here's a screenshot:
+![Volt DAW current state](https://fs.infra.thered.sh/status/volt/volt-status-preview-1.png)
