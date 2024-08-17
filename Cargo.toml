@@ -15,7 +15,3 @@ rodio = "0.19.0"
 rustfft = "6.2.0"
 serde = "1.0.203"
 strum = { version = "0.26.3", features = ["derive"] }
-
-[build]
-linker = "/usr/bin/clang"
-rustflags = ["-Z", "threads=8", "-C", "link-arg=--ld-path=/usr/bin/mold"]
