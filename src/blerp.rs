@@ -14,5 +14,5 @@ pub fn f64_size_to_f32(samples: &[f64]) -> Vec<f32> {
 }
 
 pub fn f32_size_to_f64(samples: &[f32]) -> Vec<f64> {
-    return samples.iter().flat_map(|x| [*x as f64]).collect();
+    return samples.iter().flat_map(|x| [f64::from(*x)]).collect();
 }

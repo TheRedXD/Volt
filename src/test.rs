@@ -1,31 +1,27 @@
-use std::fs::File;
-use std::io::BufReader;
-use std::time::Duration;
 use rodio::{
-    Decoder, OutputStream, Sink,
+    OutputStream,
     buffer::SamplesBuffer
 };
-use rodio::source::{SineWave, Source};
 
-use cpal::{Data, Sample, SampleFormat, FromSample};
+use cpal::{Sample, SampleFormat};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use crate::blerp;
 
 fn soine() -> Vec<f64> {
     (0..44100)
-        .map(|i| ((2.0 * std::f64::consts::PI) * (440.0 * (i as f64)) / 44100.0).sin())
+        .map(|i| ((2.0 * std::f64::consts::PI) * (440.0 * f64::from(i)) / 44100.0).sin())
         .collect()
 }
 
 fn soiniet(i: i32) -> f64 {
-    ((2.0 * std::f64::consts::PI) * (440.0 * (i as f64)) / 44100.0).sin()
+    ((2.0 * std::f64::consts::PI) * (440.0 * f64::from(i)) / 44100.0).sin()
 }
 
 pub fn test() {
     std::thread::spawn(|| {
         let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-        let mut source: Vec<f32> = blerp::f64_size_to_f32(
+        let source: Vec<f32> = blerp::f64_size_to_f32(
             &soine()
         );
         stream_handle.play_raw(SamplesBuffer::new(1, 44100, source)).unwrap();
@@ -57,7 +53,7 @@ fn write_silence<T: Sample>(data: &mut [T], _: &cpal::OutputCallbackInfo) {
 }
 
 pub fn cpaltest() {
-    let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
+    let err_fn = |err| eprintln!("an error occurred on the output audio stream: {err}");
     let host = cpal::default_host();
     let device = host.default_output_device().expect("no output device available");
     let mut supported_configs_range = device.supported_output_configs()
