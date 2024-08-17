@@ -1,7 +1,7 @@
 use eframe::{egui, run_native, App, CreationContext, NativeOptions, Result};
 use egui::{
     ecolor::HexColor, include_image, pos2, vec2, Align2, CentralPanel, Color32, Context, FontData,
-    FontDefinitions, FontFamily, FontId, Frame, Image, LayerId, Pos2, Rect, Stroke, Ui,
+    FontDefinitions, FontFamily, FontId, Image, LayerId, Pos2, Rect, Stroke, Ui,
 };
 use egui_extras::install_image_loaders;
 use itertools::{chain, Itertools};
@@ -14,7 +14,6 @@ mod visual;
 fn main() -> Result {
     let title = "Volt";
     let native_options = NativeOptions {
-        multisampling: 8,
         vsync: false,
         ..Default::default()
     };
@@ -125,34 +124,34 @@ impl Browser {
             if was_pressed && rect.contains(press_position) {
                 self.selected_category = category;
             }
-            match category {
-                BrowserCategory::Files => {
-                    for (index, name) in chain!(
-                        self.directories.iter().sorted_unstable(),
-                        self.audio.iter().sorted_unstable(),
-                        self.files.iter().sorted_unstable(),
-                    )
-                    .enumerate()
-                    {
-                        #[allow(clippy::cast_precision_loss)]
-                        let y = (index as f32).mul_add(16.0, 90.);
-                        Frame::none().show(ui, |ui| {
-                            ui.painter().text(
-                                pos2(30., y),
-                                Align2::LEFT_TOP,
-                                name,
-                                FontId::new(14.0, FontFamily::Name("IBMPlexMono".into())),
-                                *COLORS_BROWSER_UNSELECTED_BUTTON_FG,
-                            )
-                        });
+        }
+        match self.selected_category {
+            BrowserCategory::Files => {
+                for (index, name) in chain!(
+                    self.directories.iter().sorted_unstable(),
+                    self.audio.iter().sorted_unstable(),
+                    self.files.iter().sorted_unstable(),
+                )
+                .enumerate()
+                {
+                    #[allow(clippy::cast_precision_loss)]
+                    let y = (index as f32).mul_add(16.0, 90.);
+                    egui::Frame::none().show(ui, |ui| {
+                        ui.painter().text(
+                            pos2(30., y),
+                            Align2::LEFT_TOP,
+                            name,
+                            FontId::new(14.0, FontFamily::Name("IBMPlexMono".into())),
+                            *COLORS_BROWSER_UNSELECTED_BUTTON_FG,
+                        )
+                    });
 
-                        Image::new(include_image!("images/icons/folder.png"))
-                            .paint_at(ui, Rect::from_min_size(pos2(10., y + 2.), vec2(14., 14.)));
-                    }
+                    Image::new(include_image!("images/icons/folder.png"))
+                        .paint_at(ui, Rect::from_min_size(pos2(10., y + 2.), vec2(14., 14.)));
                 }
-                BrowserCategory::Devices => {
-                    // TODO show some devices here!
-                }
+            }
+            BrowserCategory::Devices => {
+                // TODO show some devices here!
             }
         }
     }
@@ -206,41 +205,20 @@ colors! {
     COLORS_BG_TEXT                              646987
 }
 
-fn paint_navbar(ui: &Ui, rect: &Rect) {
-    ui.painter().rect_filled(
-        Rect {
-            min: Pos2 { x: 0.0, y: 0.0 },
-            max: Pos2 {
-                x: rect.width(),
-                y: 50.0,
-            },
-        },
-        0.0,
-        *COLORS_NAVBAR,
-    );
+fn paint_navbar(ui: &Ui, viewport: &Rect) {
+    ui.painter()
+        .rect_filled(viewport.with_max_y(50.), 0.0, *COLORS_NAVBAR);
     Image::new(include_image!("images/icons/icon.png"))
-        .rounding(0.0)
-        .texture_options(egui::TextureOptions {
-            magnification: egui::TextureFilter::Linear,
-            minification: egui::TextureFilter::Linear,
-            wrap_mode: egui::TextureWrapMode::ClampToEdge,
-        })
-        .paint_at(
-            ui,
-            Rect {
-                min: Pos2 { x: 5.0, y: 5.0 },
-                max: Pos2 { x: 45.0, y: 45.0 },
-            },
-        );
+        .paint_at(ui, Rect::from_min_size(pos2(5., 5.), vec2(40., 40.)));
     ui.painter().text(
-        Pos2 { x: 55.0, y: 8.0 },
+        pos2(55., 8.),
         Align2::LEFT_TOP,
         "Volt",
         FontId::new(20.0, FontFamily::Proportional),
         Color32::from_hex("#ffffff").unwrap_or_default(),
     );
     ui.painter().text(
-        Pos2 { x: 55.0, y: 28.0 },
+        pos2(55., 28.),
         Align2::LEFT_TOP,
         "Version INDEV",
         FontId::new(12.0, FontFamily::Proportional),
@@ -248,13 +226,7 @@ fn paint_navbar(ui: &Ui, rect: &Rect) {
     );
 
     ui.painter().line_segment(
-        [
-            Pos2 { x: 300.0, y: 50.0 },
-            Pos2 {
-                x: rect.width(),
-                y: 50.0,
-            },
-        ],
+        [pos2(300., 50.), pos2(viewport.width(), 50.)],
         Stroke::new(0.5, *COLORS_NAVBAR_OUTLINE),
     );
 }
@@ -263,11 +235,12 @@ impl App for VoltApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         'load: {
             if !self.browser.files_loaded {
-                let test_path = "/home/thered/Samples/";
-                let Ok(entries) = read_dir(test_path) else {
+                let Ok(entries) = read_dir(include_str!("test_path").trim()) else {
                     break 'load;
                 };
-
+                self.browser.directories.clear();
+                self.browser.audio.clear();
+                self.browser.files.clear();
                 for item in entries {
                     let name = String::from(item.as_ref().unwrap().file_name().to_str().unwrap());
                     if item.as_ref().unwrap().metadata().unwrap().is_dir() {
@@ -288,7 +261,7 @@ impl App for VoltApp {
                 .input(|input_state| input_state.viewport().inner_rect)
                 .unwrap();
             ui.painter().rect_filled(
-                viewport,
+                Rect::from_min_size(Pos2::ZERO, viewport.size()),
                 0.0,
                 Color32::from_hex("#1e222f").unwrap_or_default(),
             );
@@ -296,7 +269,7 @@ impl App for VoltApp {
             paint_navbar(ui, &viewport);
 
             ui.painter().text(
-                viewport.center(),
+                Rect::from_min_size(Pos2::ZERO, viewport.size()).center(),
                 Align2::CENTER_CENTER,
                 "In development",
                 FontId::new(32.0, FontFamily::Name("IBMPlexMono".into())),
