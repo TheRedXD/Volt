@@ -4,6 +4,7 @@ use egui::{
     FontDefinitions, FontFamily, FontId, Image, LayerId, PointerButton, Pos2, Rect, Stroke, Ui,
 };
 use egui_extras::install_image_loaders;
+use open::that_detached;
 use std::{cmp::Ordering, collections::BTreeSet, fs::read_dir, path::PathBuf, sync::LazyLock};
 use strum::Display;
 mod blerp;
@@ -62,7 +63,7 @@ enum BrowserEntryKind {
 struct Browser {
     entries: BTreeSet<BrowserEntry>,
     selected_category: BrowserCategory,
-    files_loaded: bool,
+    path: PathBuf,
 }
 
 struct VoltApp {
@@ -181,11 +182,18 @@ impl Browser {
                     })
                     .paint_at(ui, Rect::from_min_size(pos2(10., y + 2.), vec2(14., 14.)));
                     if was_pressed && rect.contains(press_position) {
-                        dbg!(entry);
-                        // TODO open the thing
-                        //      file (probably open in default program)
-                        //      directory (open it)
-                        //      audio (play it)
+                        match entry.kind {
+                            BrowserEntryKind::Directory => {
+                                self.path.clone_from(&entry.path);
+                                break;
+                            }
+                            BrowserEntryKind::Audio => {
+                                // TODO play the audio
+                            }
+                            BrowserEntryKind::File => {
+                                that_detached(entry.path.clone()).unwrap();
+                            }
+                        }
                     }
                 }
             }
@@ -215,7 +223,7 @@ impl VoltApp {
             browser: Browser {
                 entries: BTreeSet::new(),
                 selected_category: BrowserCategory::Files,
-                files_loaded: false,
+                path: "/".into(),
             },
         }
     }
@@ -271,40 +279,38 @@ fn paint_navbar(ui: &Ui, viewport: &Rect) {
 impl App for VoltApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         'load: {
-            if !self.browser.files_loaded {
-                let Ok(entries) = read_dir(include_str!("test_path").trim()) else {
-                    break 'load;
-                };
-                self.browser.entries.clear();
-                for entry in entries {
-                    let entry = entry.as_ref();
-                    let path = entry.unwrap().path();
-                    if entry.unwrap().metadata().unwrap().is_dir() {
-                        self.browser.entries.insert(BrowserEntry {
-                            path,
-                            kind: BrowserEntryKind::Directory,
-                        });
-                    } else if [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
-                        .into_iter()
-                        .any(|extension| {
-                            entry
-                                .unwrap()
-                                .file_name()
-                                .to_str()
-                                .unwrap()
-                                .ends_with(extension)
-                        })
-                    {
-                        self.browser.entries.insert(BrowserEntry {
-                            path,
-                            kind: BrowserEntryKind::Audio,
-                        });
-                    } else {
-                        self.browser.entries.insert(BrowserEntry {
-                            path,
-                            kind: BrowserEntryKind::File,
-                        });
-                    }
+            let Ok(entries) = read_dir(&self.browser.path) else {
+                break 'load;
+            };
+            self.browser.entries.clear();
+            for entry in entries {
+                let entry = entry.as_ref();
+                let path = entry.unwrap().path();
+                if entry.unwrap().metadata().unwrap().is_dir() {
+                    self.browser.entries.insert(BrowserEntry {
+                        path,
+                        kind: BrowserEntryKind::Directory,
+                    });
+                } else if [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
+                    .into_iter()
+                    .any(|extension| {
+                        entry
+                            .unwrap()
+                            .file_name()
+                            .to_str()
+                            .unwrap()
+                            .ends_with(extension)
+                    })
+                {
+                    self.browser.entries.insert(BrowserEntry {
+                        path,
+                        kind: BrowserEntryKind::Audio,
+                    });
+                } else {
+                    self.browser.entries.insert(BrowserEntry {
+                        path,
+                        kind: BrowserEntryKind::File,
+                    });
                 }
             }
         }
