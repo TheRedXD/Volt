@@ -188,7 +188,7 @@ impl Browser {
                                 break;
                             }
                             BrowserEntryKind::Audio => {
-                                // TODO play the audio
+                                // TODO play some audio
                             }
                             BrowserEntryKind::File => {
                                 that_detached(entry.path.clone()).unwrap();
