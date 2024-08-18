@@ -182,6 +182,10 @@ impl Browser {
                     .paint_at(ui, Rect::from_min_size(pos2(10., y + 2.), vec2(14., 14.)));
                     if was_pressed && rect.contains(press_position) {
                         dbg!(entry);
+                        // TODO open the thing
+                        //      file (probably open in default program)
+                        //      directory (open it)
+                        //      audio (play it)
                     }
                 }
             }
