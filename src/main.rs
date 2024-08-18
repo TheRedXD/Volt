@@ -1,11 +1,10 @@
 use eframe::{egui, run_native, App, CreationContext, NativeOptions, Result};
 use egui::{
     ecolor::HexColor, include_image, pos2, vec2, Align2, CentralPanel, Color32, Context, FontData,
-    FontDefinitions, FontFamily, FontId, Image, LayerId, Pos2, Rect, Stroke, Ui,
+    FontDefinitions, FontFamily, FontId, Image, LayerId, PointerButton, Pos2, Rect, Stroke, Ui,
 };
 use egui_extras::install_image_loaders;
-use itertools::{chain, Itertools};
-use std::{fs::read_dir, sync::LazyLock};
+use std::{cmp::Ordering, collections::BTreeSet, fs::read_dir, path::PathBuf, sync::LazyLock};
 use strum::Display;
 mod blerp;
 mod test;
@@ -30,10 +29,38 @@ enum BrowserCategory {
     Devices,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BrowserEntry {
+    path: PathBuf,
+    kind: BrowserEntryKind,
+}
+
+impl Ord for BrowserEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.kind.cmp(&other.kind).then(
+            self.path
+                .file_name()
+                .unwrap()
+                .cmp(other.path.file_name().unwrap()),
+        )
+    }
+}
+
+impl PartialOrd for BrowserEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Display, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum BrowserEntryKind {
+    Directory,
+    Audio,
+    File,
+}
+
 struct Browser {
-    directories: Vec<String>,
-    audio: Vec<String>,
-    files: Vec<String>,
+    entries: BTreeSet<BrowserEntry>,
     selected_category: BrowserCategory,
     files_loaded: bool,
 }
@@ -42,15 +69,19 @@ struct VoltApp {
     pub browser: Browser,
 }
 
+fn hovered(ctx: &Context, rect: &Rect) -> bool {
+    ctx.rect_contains_pointer(
+        ctx.layer_id_at(ctx.pointer_hover_pos().unwrap_or_default())
+            .unwrap_or_else(LayerId::background),
+        *rect,
+    )
+}
+
 impl Browser {
     fn paint_button(ctx: &Context, ui: &Ui, button: &Rect, selected: bool, text: &str) {
         let color = if selected {
             *COLORS_BROWSER_SELECTED_BUTTON_FG
-        } else if ctx.rect_contains_pointer(
-            ctx.layer_id_at(ctx.pointer_hover_pos().unwrap_or_default())
-                .unwrap_or_else(LayerId::background),
-            *button,
-        ) {
+        } else if hovered(ctx, button) {
             *COLORS_BROWSER_UNSELECTED_HOVER_BUTTON_FG
         } else {
             *COLORS_BROWSER_UNSELECTED_BUTTON_FG
@@ -101,9 +132,7 @@ impl Browser {
         );
         let Some((was_pressed, press_position)) = ctx.input(|input_state| {
             Some((
-                input_state
-                    .pointer
-                    .button_released(egui::PointerButton::Primary),
+                input_state.pointer.button_released(PointerButton::Primary),
                 input_state.pointer.latest_pos()?,
             ))
         }) else {
@@ -127,27 +156,33 @@ impl Browser {
         }
         match self.selected_category {
             BrowserCategory::Files => {
-                for (index, name) in chain!(
-                    self.directories.iter().sorted_unstable(),
-                    self.audio.iter().sorted_unstable(),
-                    self.files.iter().sorted_unstable(),
-                )
-                .enumerate()
-                {
+                for (index, entry) in self.entries.iter().enumerate() {
                     #[allow(clippy::cast_precision_loss)]
                     let y = (index as f32).mul_add(16.0, 90.);
+                    let rect = &Rect::from_min_size(pos2(0., y), vec2(300., 16.));
                     egui::Frame::none().show(ui, |ui| {
                         ui.painter().text(
                             pos2(30., y),
                             Align2::LEFT_TOP,
-                            name,
+                            entry.path.file_name().unwrap().to_str().unwrap(),
                             FontId::new(14.0, FontFamily::Name("IBMPlexMono".into())),
-                            *COLORS_BROWSER_UNSELECTED_BUTTON_FG,
+                            if hovered(ctx, rect) {
+                                *COLORS_BROWSER_UNSELECTED_HOVER_BUTTON_FG
+                            } else {
+                                *COLORS_BROWSER_UNSELECTED_BUTTON_FG
+                            },
                         )
                     });
 
-                    Image::new(include_image!("images/icons/folder.png"))
-                        .paint_at(ui, Rect::from_min_size(pos2(10., y + 2.), vec2(14., 14.)));
+                    Image::new(match entry.kind {
+                        BrowserEntryKind::Directory => include_image!("images/icons/folder.png"),
+                        BrowserEntryKind::Audio => include_image!("images/icons/audio.png"),
+                        BrowserEntryKind::File => include_image!("images/icons/file.png"),
+                    })
+                    .paint_at(ui, Rect::from_min_size(pos2(10., y + 2.), vec2(14., 14.)));
+                    if was_pressed && rect.contains(press_position) {
+                        dbg!(entry);
+                    }
                 }
             }
             BrowserCategory::Devices => {
@@ -174,9 +209,7 @@ impl VoltApp {
         cc.egui_ctx.set_fonts(fonts);
         Self {
             browser: Browser {
-                directories: Vec::new(),
-                audio: Vec::new(),
-                files: Vec::new(),
+                entries: BTreeSet::new(),
                 selected_category: BrowserCategory::Files,
                 files_loaded: false,
             },
@@ -238,20 +271,35 @@ impl App for VoltApp {
                 let Ok(entries) = read_dir(include_str!("test_path").trim()) else {
                     break 'load;
                 };
-                self.browser.directories.clear();
-                self.browser.audio.clear();
-                self.browser.files.clear();
-                for item in entries {
-                    let name = String::from(item.as_ref().unwrap().file_name().to_str().unwrap());
-                    if item.as_ref().unwrap().metadata().unwrap().is_dir() {
-                        self.browser.directories.push(name);
+                self.browser.entries.clear();
+                for entry in entries {
+                    let entry = entry.as_ref();
+                    let path = entry.unwrap().path();
+                    if entry.unwrap().metadata().unwrap().is_dir() {
+                        self.browser.entries.insert(BrowserEntry {
+                            path,
+                            kind: BrowserEntryKind::Directory,
+                        });
                     } else if [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
                         .into_iter()
-                        .any(|extension| name.ends_with(extension))
+                        .any(|extension| {
+                            entry
+                                .unwrap()
+                                .file_name()
+                                .to_str()
+                                .unwrap()
+                                .ends_with(extension)
+                        })
                     {
-                        self.browser.audio.push(name);
+                        self.browser.entries.insert(BrowserEntry {
+                            path,
+                            kind: BrowserEntryKind::Audio,
+                        });
                     } else {
-                        self.browser.files.push(name);
+                        self.browser.entries.insert(BrowserEntry {
+                            path,
+                            kind: BrowserEntryKind::File,
+                        });
                     }
                 }
             }
