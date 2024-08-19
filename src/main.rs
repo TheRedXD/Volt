@@ -162,10 +162,15 @@ impl Browser {
                     let y = (index as f32).mul_add(16.0, 90.);
                     let rect = &Rect::from_min_size(pos2(0., y), vec2(300., 16.));
                     egui::Frame::none().show(ui, |ui| {
+                        let name = entry.path.file_name().unwrap().to_str().unwrap();
                         ui.painter().text(
                             pos2(30., y),
                             Align2::LEFT_TOP,
-                            entry.path.file_name().unwrap().to_str().unwrap(),
+                            if name.len() > 30 {
+                                name[..30].to_string() + "..."
+                            } else {
+                                name.to_string()
+                            },
                             FontId::new(14.0, FontFamily::Name("IBMPlexMono".into())),
                             if hovered(ctx, rect) {
                                 *COLORS_BROWSER_UNSELECTED_HOVER_BUTTON_FG
