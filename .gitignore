@@ -1,4 +1,5 @@
 /target
 bungus*.wav
 Archive.tar.gz
-Cargo.lock
+test_path
+.DS_Store

@@ -17,11 +17,11 @@ pub fn form_wav_file_header(
     sample_length: u32,
     audio_format: WaveAudioFormat
 ) -> io::Result<Vec<u8>> {
-    let file_length: u32 = sample_length * ((bits_per_sample as u32) / 8) + 44;
+    let file_length: u32 = sample_length * (u32::from(bits_per_sample) / 8) + 44;
     let format_data_length: u32 = 16;
-    let byte_rate: u32 = sample_rate * (channels as u32) * (bits_per_sample as u32) / 8;
+    let byte_rate: u32 = sample_rate * u32::from(channels) * u32::from(bits_per_sample) / 8;
     let block_align: u16 = channels * bits_per_sample / 8;
-    let data_length: u32 = sample_length * ((bits_per_sample as u32) / 8) * (channels as u32);
+    let data_length: u32 = sample_length * (u32::from(bits_per_sample) / 8) * u32::from(channels);
 
     let audio_format_u16: u16 = match audio_format {
         WaveAudioFormat::PulseCodeModulation => 1,
@@ -73,7 +73,7 @@ pub fn form_wav_file_data_f32tof64(
 ) -> io::Result<Vec<u8>> {
     let mut filebuf = header_buffer;
 
-    filebuf.extend(buffer.iter().flat_map(|value| (*value as f64).to_le_bytes()));
+    filebuf.extend(buffer.iter().flat_map(|value| f64::from(*value).to_le_bytes()));
 
     Ok(filebuf)
 }
@@ -139,7 +139,7 @@ pub fn form_wav_file_data_f32toi32(
 ) -> io::Result<Vec<u8>> {
     let mut filebuf = header_buffer;
 
-    filebuf.extend(buffer.iter().flat_map(|value| ((value * 2147483647.0) as i32).to_le_bytes()));
+    filebuf.extend(buffer.iter().flat_map(|value| ((value * 2_147_483_647.0) as i32).to_le_bytes()));
 
     Ok(filebuf)
 }
@@ -150,7 +150,7 @@ pub fn form_wav_file_data_f64toi32(
 ) -> io::Result<Vec<u8>> {
     let mut filebuf = header_buffer;
 
-    filebuf.extend(buffer.iter().flat_map(|value| ((value * 2147483647.0) as i32).to_le_bytes()));
+    filebuf.extend(buffer.iter().flat_map(|value| ((value * 2_147_483_647.0) as i32).to_le_bytes()));
 
     Ok(filebuf)
 }
@@ -161,7 +161,7 @@ pub fn form_wav_file_data_f32toi64(
 ) -> io::Result<Vec<u8>> {
     let mut filebuf = header_buffer;
 
-    filebuf.extend(buffer.iter().flat_map(|value| ((value * 9223372036854776000.0) as i64).to_le_bytes()));
+    filebuf.extend(buffer.iter().flat_map(|value| ((value * 9_223_372_036_854_776_000.0) as i64).to_le_bytes()));
 
     Ok(filebuf)
 }
@@ -172,7 +172,7 @@ pub fn form_wav_file_data_f64toi64(
 ) -> io::Result<Vec<u8>> {
     let mut filebuf = header_buffer;
 
-    filebuf.extend(buffer.iter().flat_map(|value| ((value * 9223372036854776000.0) as i64).to_le_bytes()));
+    filebuf.extend(buffer.iter().flat_map(|value| ((value * 9_223_372_036_854_776_000.0) as i64).to_le_bytes()));
 
     Ok(filebuf)
 }
