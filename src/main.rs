@@ -97,11 +97,11 @@ impl Browser {
         ui.painter().line_segment(
             [
                 Pos2 {
-                    x: button.left() + 8.0,
+                    x: button.left() + 8.,
                     y: button.bottom(),
                 },
                 Pos2 {
-                    x: button.right() - 8.0,
+                    x: button.right() - 8.,
                     y: button.bottom(),
                 },
             ],
@@ -112,9 +112,9 @@ impl Browser {
     fn paint(&mut self, ctx: &Context, ui: &mut Ui, viewport: &Rect) {
         ui.painter().rect_filled(
             Rect {
-                min: Pos2 { x: 0.0, y: 50.0 },
+                min: Pos2 { x: 0., y: 50. },
                 max: Pos2 {
-                    x: 300.0,
+                    x: 300.,
                     y: viewport.height(),
                 },
             },
@@ -123,9 +123,9 @@ impl Browser {
         );
         ui.painter().line_segment(
             [
-                Pos2 { x: 300.0, y: 50.0 },
+                Pos2 { x: 300., y: 50. },
                 Pos2 {
-                    x: 300.0,
+                    x: 300.,
                     y: viewport.height(),
                 },
             ],
@@ -171,7 +171,7 @@ impl Browser {
                             } else {
                                 name.to_string()
                             },
-                            FontId::new(14.0, FontFamily::Name("IBMPlexMono".into())),
+                            FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
                             if hovered(ctx, rect) {
                                 *COLORS_BROWSER_UNSELECTED_HOVER_BUTTON_FG
                             } else {
@@ -203,7 +203,7 @@ impl Browser {
                 }
             }
             BrowserCategory::Devices => {
-                // TODO show some devices here!
+                // TODO: Show some devices here!
             }
         }
     }
@@ -244,6 +244,7 @@ macro_rules! colors {
     };
 }
 
+// Color definitions
 colors! {
     COLORS_NAVBAR                               262b3b
     COLORS_NAVBAR_OUTLINE                       00000080
@@ -282,6 +283,7 @@ fn paint_navbar(ui: &Ui, viewport: &Rect) {
 }
 
 impl App for VoltApp {
+    // TODO: Fix browser content disappearing upon mouse cursor not being inside the window.
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         'load: {
             let Ok(entries) = read_dir(&self.browser.path) else {
@@ -320,9 +322,18 @@ impl App for VoltApp {
             }
         }
         CentralPanel::default().show(ctx, |ui| {
+            // FIXME: This is a hack to get Volt temporarily in a somewhat working state.
+            let temp_w = 1920.;
+            let temp_h = 1080.;
+            // ^^^^^^^^^^^^^^^ Not production code!
+
             let viewport: Rect = ctx
                 .input(|input_state| input_state.viewport().inner_rect)
-                .unwrap();
+                // Likely should have much better handling of this particular error here
+                .unwrap_or(Rect {
+                    min: Pos2 { x: 0., y: 0. },
+                    max: Pos2 { x: temp_w, y: temp_h }
+                });
             ui.painter().rect_filled(
                 Rect::from_min_size(Pos2::ZERO, viewport.size()),
                 0.0,
