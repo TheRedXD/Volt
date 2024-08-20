@@ -5,13 +5,16 @@ use egui::{
 };
 use egui_extras::install_image_loaders;
 use open::that_detached;
-use std::{cmp::Ordering, collections::BTreeSet, fs::read_dir, path::PathBuf};
-use strum::Display;
+use std::{collections::BTreeSet, fs::read_dir};
 mod blerp;
 mod test;
-
 // TODO: Move everything into components (visual)
 mod visual;
+mod paint;
+mod browser;
+
+use visual::ThemeColors;
+use browser::{ Browser, BrowserCategory, BrowserEntry, BrowserEntryKind };
 
 fn main() -> Result {
     let title = "Volt";
@@ -24,48 +27,6 @@ fn main() -> Result {
         native_options,
         Box::new(|cc| Ok(Box::new(VoltApp::new(cc)))),
     )
-}
-
-#[derive(Display, Debug, Clone, Copy, PartialEq, Eq)]
-enum BrowserCategory {
-    Files,
-    Devices,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct BrowserEntry {
-    path: PathBuf,
-    kind: BrowserEntryKind,
-}
-
-impl Ord for BrowserEntry {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.kind.cmp(&other.kind).then(
-            self.path
-                .file_name()
-                .unwrap()
-                .cmp(other.path.file_name().unwrap()),
-        )
-    }
-}
-
-impl PartialOrd for BrowserEntry {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-#[derive(Display, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum BrowserEntryKind {
-    Directory,
-    Audio,
-    File,
-}
-
-struct Browser {
-    entries: BTreeSet<BrowserEntry>,
-    selected_category: BrowserCategory,
-    path: PathBuf,
 }
 
 struct VoltApp {
@@ -249,59 +210,6 @@ impl VoltApp {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ThemeColors {
-    navbar: Color32,
-    navbar_outline: Color32,
-    browser: Color32,
-    browser_outline: Color32,
-    browser_selected_button_fg: Color32,
-    browser_unselected_button_fg: Color32,
-    browser_unselected_hover_button_fg: Color32,
-    bg_text: Color32,
-}
-
-impl Default for ThemeColors {
-    fn default() -> Self {
-        Self {
-            navbar: Color32::from_hex("#262b3b").unwrap_or_default(),
-            navbar_outline: Color32::from_hex("#00000080").unwrap_or_default(),
-            browser: Color32::from_hex("#242938").unwrap_or_default(),
-            browser_outline: Color32::from_hex("#00000080").unwrap_or_default(),
-            browser_selected_button_fg: Color32::from_hex("#ffcf7b").unwrap_or_default(),
-            browser_unselected_button_fg: Color32::from_hex("#646d88").unwrap_or_default(),
-            browser_unselected_hover_button_fg: Color32::from_hex("#8591b5").unwrap_or_default(),
-            bg_text: Color32::from_hex("#646987").unwrap_or_default(),
-        }
-    }
-}
-
-fn paint_navbar(ui: &Ui, viewport: &Rect, theme: &ThemeColors) {
-    ui.painter()
-        .rect_filled(viewport.with_max_y(50.), 0.0, theme.navbar);
-    Image::new(include_image!("images/icons/icon.png"))
-        .paint_at(ui, Rect::from_min_size(pos2(5., 5.), vec2(40., 40.)));
-    ui.painter().text(
-        pos2(55., 8.),
-        Align2::LEFT_TOP,
-        "Volt",
-        FontId::new(20.0, FontFamily::Proportional),
-        Color32::from_hex("#ffffff").unwrap_or_default(),
-    );
-    ui.painter().text(
-        pos2(55., 28.),
-        Align2::LEFT_TOP,
-        "Version INDEV",
-        FontId::new(12.0, FontFamily::Proportional),
-        Color32::from_hex("#ffffff80").unwrap_or_default(),
-    );
-
-    ui.painter().line_segment(
-        [pos2(300., 50.), pos2(viewport.width(), 50.)],
-        Stroke::new(0.5, theme.navbar_outline),
-    );
-}
-
 impl App for VoltApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         'load: {
@@ -362,7 +270,7 @@ impl App for VoltApp {
                 Color32::from_hex("#1e222f").unwrap_or_default(),
             );
 
-            paint_navbar(ui, &viewport, &self.themes);
+            paint::paint_navbar(ui, &viewport, &self.themes);
 
             ui.painter().text(
                 Rect::from_min_size(Pos2::ZERO, viewport.size()).center(),
