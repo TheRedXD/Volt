@@ -1,14 +1,16 @@
 use eframe::{egui, run_native, App, CreationContext, NativeOptions, Result};
 use egui::{
-    ecolor::HexColor, include_image, pos2, vec2, Align2, CentralPanel, Color32, Context, FontData,
-    FontDefinitions, FontFamily, FontId, Image, LayerId, PointerButton, Pos2, Rect, Stroke, Ui,
+    include_image, pos2, vec2, Align2, CentralPanel, Color32, Context, FontData, FontDefinitions,
+    FontFamily, FontId, Image, LayerId, PointerButton, Pos2, Rect, Stroke, Ui,
 };
 use egui_extras::install_image_loaders;
 use open::that_detached;
-use std::{cmp::Ordering, collections::BTreeSet, fs::read_dir, path::PathBuf, sync::LazyLock};
+use std::{cmp::Ordering, collections::BTreeSet, fs::read_dir, path::PathBuf};
 use strum::Display;
 mod blerp;
 mod test;
+
+// TODO: Move everything into components (visual)
 mod visual;
 
 fn main() -> Result {
@@ -68,6 +70,7 @@ struct Browser {
 
 struct VoltApp {
     pub browser: Browser,
+    pub themes: ThemeColors,
 }
 
 fn hovered(ctx: &Context, rect: &Rect) -> bool {
@@ -79,13 +82,20 @@ fn hovered(ctx: &Context, rect: &Rect) -> bool {
 }
 
 impl Browser {
-    fn paint_button(ctx: &Context, ui: &Ui, button: &Rect, selected: bool, text: &str) {
+    fn paint_button(
+        ctx: &Context,
+        ui: &Ui,
+        button: &Rect,
+        selected: bool,
+        text: &str,
+        theme: &ThemeColors,
+    ) {
         let color = if selected {
-            *COLORS_BROWSER_SELECTED_BUTTON_FG
+            theme.browser_selected_button_fg
         } else if hovered(ctx, button) {
-            *COLORS_BROWSER_UNSELECTED_HOVER_BUTTON_FG
+            theme.browser_unselected_hover_button_fg
         } else {
-            *COLORS_BROWSER_UNSELECTED_BUTTON_FG
+            theme.browser_unselected_button_fg
         };
         ui.painter().text(
             button.center(),
@@ -109,7 +119,7 @@ impl Browser {
         );
     }
 
-    fn paint(&mut self, ctx: &Context, ui: &mut Ui, viewport: &Rect) {
+    fn paint(&mut self, ctx: &Context, ui: &mut Ui, viewport: &Rect, theme: &ThemeColors) {
         ui.painter().rect_filled(
             Rect {
                 min: Pos2 { x: 0., y: 50. },
@@ -119,7 +129,7 @@ impl Browser {
                 },
             },
             0.0,
-            *COLORS_BROWSER,
+            theme.browser,
         );
         ui.painter().line_segment(
             [
@@ -129,16 +139,16 @@ impl Browser {
                     y: viewport.height(),
                 },
             ],
-            Stroke::new(0.5, *COLORS_BROWSER_OUTLINE),
+            Stroke::new(0.5, theme.browser_outline),
         );
-        let Some((was_pressed, press_position)) = ctx.input(|input_state| {
-            Some((
-                input_state.pointer.button_released(PointerButton::Primary),
-                input_state.pointer.latest_pos()?,
-            ))
-        }) else {
-            return;
-        };
+        let (was_pressed, press_position) = ctx
+            .input(|input_state| {
+                Some((
+                    input_state.pointer.button_released(PointerButton::Primary),
+                    Some(input_state.pointer.latest_pos()?),
+                ))
+            })
+            .unwrap_or((false, None));
         for (category, rect) in [
             (
                 BrowserCategory::Files,
@@ -150,8 +160,10 @@ impl Browser {
             ),
         ] {
             let open = self.selected_category == category;
-            Self::paint_button(ctx, ui, &rect, open, category.to_string().as_str());
-            if was_pressed && rect.contains(press_position) {
+            Self::paint_button(ctx, ui, &rect, open, category.to_string().as_str(), theme);
+            if press_position
+                .is_some_and(|press_position| was_pressed && rect.contains(press_position))
+            {
                 self.selected_category = category;
             }
         }
@@ -173,9 +185,9 @@ impl Browser {
                             },
                             FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
                             if hovered(ctx, rect) {
-                                *COLORS_BROWSER_UNSELECTED_HOVER_BUTTON_FG
+                                theme.browser_unselected_hover_button_fg
                             } else {
-                                *COLORS_BROWSER_UNSELECTED_BUTTON_FG
+                                theme.browser_unselected_button_fg
                             },
                         )
                     });
@@ -186,7 +198,9 @@ impl Browser {
                         BrowserEntryKind::File => include_image!("images/icons/file.png"),
                     })
                     .paint_at(ui, Rect::from_min_size(pos2(10., y + 2.), vec2(14., 14.)));
-                    if was_pressed && rect.contains(press_position) {
+                    if press_position
+                        .is_some_and(|press_position| was_pressed && rect.contains(press_position))
+                    {
                         match entry.kind {
                             BrowserEntryKind::Directory => {
                                 self.path.clone_from(&entry.path);
@@ -230,35 +244,41 @@ impl VoltApp {
                 selected_category: BrowserCategory::Files,
                 path: "/".into(),
             },
+            themes: ThemeColors::default(),
         }
     }
 }
 
-macro_rules! colors {
-    ($($name:ident $color:tt )*) => {
-        $(
-            static $name: LazyLock<Color32> = LazyLock::new(|| {
-                HexColor::from_str_without_hash(stringify!($color)).unwrap().color()
-            });
-        )*
-    };
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ThemeColors {
+    navbar: Color32,
+    navbar_outline: Color32,
+    browser: Color32,
+    browser_outline: Color32,
+    browser_selected_button_fg: Color32,
+    browser_unselected_button_fg: Color32,
+    browser_unselected_hover_button_fg: Color32,
+    bg_text: Color32,
 }
 
-// Color definitions
-colors! {
-    COLORS_NAVBAR                               262b3b
-    COLORS_NAVBAR_OUTLINE                       00000080
-    COLORS_BROWSER                              242938
-    COLORS_BROWSER_OUTLINE                      00000080
-    COLORS_BROWSER_SELECTED_BUTTON_FG           ffcf7b
-    COLORS_BROWSER_UNSELECTED_BUTTON_FG         646d88
-    COLORS_BROWSER_UNSELECTED_HOVER_BUTTON_FG   8591b5
-    COLORS_BG_TEXT                              646987
+impl Default for ThemeColors {
+    fn default() -> Self {
+        Self {
+            navbar: Color32::from_hex("#262b3b").unwrap_or_default(),
+            navbar_outline: Color32::from_hex("#00000080").unwrap_or_default(),
+            browser: Color32::from_hex("#242938").unwrap_or_default(),
+            browser_outline: Color32::from_hex("#00000080").unwrap_or_default(),
+            browser_selected_button_fg: Color32::from_hex("#ffcf7b").unwrap_or_default(),
+            browser_unselected_button_fg: Color32::from_hex("#646d88").unwrap_or_default(),
+            browser_unselected_hover_button_fg: Color32::from_hex("#8591b5").unwrap_or_default(),
+            bg_text: Color32::from_hex("#646987").unwrap_or_default(),
+        }
+    }
 }
 
-fn paint_navbar(ui: &Ui, viewport: &Rect) {
+fn paint_navbar(ui: &Ui, viewport: &Rect, theme: &ThemeColors) {
     ui.painter()
-        .rect_filled(viewport.with_max_y(50.), 0.0, *COLORS_NAVBAR);
+        .rect_filled(viewport.with_max_y(50.), 0.0, theme.navbar);
     Image::new(include_image!("images/icons/icon.png"))
         .paint_at(ui, Rect::from_min_size(pos2(5., 5.), vec2(40., 40.)));
     ui.painter().text(
@@ -278,12 +298,11 @@ fn paint_navbar(ui: &Ui, viewport: &Rect) {
 
     ui.painter().line_segment(
         [pos2(300., 50.), pos2(viewport.width(), 50.)],
-        Stroke::new(0.5, *COLORS_NAVBAR_OUTLINE),
+        Stroke::new(0.5, theme.navbar_outline),
     );
 }
 
 impl App for VoltApp {
-    // TODO: Fix browser content disappearing upon mouse cursor not being inside the window.
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         'load: {
             let Ok(entries) = read_dir(&self.browser.path) else {
@@ -332,7 +351,10 @@ impl App for VoltApp {
                 // Likely should have much better handling of this particular error here
                 .unwrap_or(Rect {
                     min: Pos2 { x: 0., y: 0. },
-                    max: Pos2 { x: temp_w, y: temp_h }
+                    max: Pos2 {
+                        x: temp_w,
+                        y: temp_h,
+                    },
                 });
             ui.painter().rect_filled(
                 Rect::from_min_size(Pos2::ZERO, viewport.size()),
@@ -340,17 +362,17 @@ impl App for VoltApp {
                 Color32::from_hex("#1e222f").unwrap_or_default(),
             );
 
-            paint_navbar(ui, &viewport);
+            paint_navbar(ui, &viewport, &self.themes);
 
             ui.painter().text(
                 Rect::from_min_size(Pos2::ZERO, viewport.size()).center(),
                 Align2::CENTER_CENTER,
                 "In development",
                 FontId::new(32.0, FontFamily::Name("IBMPlexMono".into())),
-                *COLORS_BG_TEXT,
+                self.themes.bg_text,
             );
 
-            self.browser.paint(ctx, ui, &viewport);
+            self.browser.paint(ctx, ui, &viewport, &self.themes);
         });
     }
 }
