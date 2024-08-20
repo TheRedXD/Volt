@@ -301,7 +301,6 @@ fn paint_navbar(ui: &Ui, viewport: &Rect, theme: &ThemeColors) {
 }
 
 impl App for VoltApp {
-    // TODO: Fix browser content disappearing upon mouse cursor not being inside the window.
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         'load: {
             let Ok(entries) = read_dir(&self.browser.path) else {
