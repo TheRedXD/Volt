@@ -1,7 +1,7 @@
 use eframe::{egui, run_native, App, CreationContext, NativeOptions, Result};
 use egui::{
-    include_image, pos2, vec2, Align2, CentralPanel, Color32, Context, FontData,
-    FontDefinitions, FontFamily, FontId, Image, LayerId, PointerButton, Pos2, Rect, Stroke, Ui,
+    include_image, pos2, vec2, Align2, CentralPanel, Color32, Context, FontData, FontDefinitions,
+    FontFamily, FontId, Image, LayerId, PointerButton, Pos2, Rect, Stroke, Ui,
 };
 use egui_extras::install_image_loaders;
 use open::that_detached;
@@ -80,7 +80,14 @@ fn hovered(ctx: &Context, rect: &Rect) -> bool {
 }
 
 impl Browser {
-    fn paint_button(ctx: &Context, ui: &Ui, button: &Rect, selected: bool, text: &str, theme: &ThemeColors) {
+    fn paint_button(
+        ctx: &Context,
+        ui: &Ui,
+        button: &Rect,
+        selected: bool,
+        text: &str,
+        theme: &ThemeColors,
+    ) {
         let color = if selected {
             theme.browser_selected_button_fg
         } else if hovered(ctx, button) {
@@ -132,14 +139,14 @@ impl Browser {
             ],
             Stroke::new(0.5, theme.browser_outline),
         );
-        let Some((was_pressed, press_position)) = ctx.input(|input_state| {
-            Some((
-                input_state.pointer.button_released(PointerButton::Primary),
-                input_state.pointer.latest_pos()?,
-            ))
-        }) else {
-            return;
-        };
+        let (was_pressed, press_position) = ctx
+            .input(|input_state| {
+                Some((
+                    input_state.pointer.button_released(PointerButton::Primary),
+                    Some(input_state.pointer.latest_pos()?),
+                ))
+            })
+            .unwrap_or((false, None));
         for (category, rect) in [
             (
                 BrowserCategory::Files,
@@ -152,7 +159,9 @@ impl Browser {
         ] {
             let open = self.selected_category == category;
             Self::paint_button(ctx, ui, &rect, open, category.to_string().as_str(), theme);
-            if was_pressed && rect.contains(press_position) {
+            if press_position
+                .is_some_and(|press_position| was_pressed && rect.contains(press_position))
+            {
                 self.selected_category = category;
             }
         }
@@ -187,7 +196,9 @@ impl Browser {
                         BrowserEntryKind::File => include_image!("images/icons/file.png"),
                     })
                     .paint_at(ui, Rect::from_min_size(pos2(10., y + 2.), vec2(14., 14.)));
-                    if was_pressed && rect.contains(press_position) {
+                    if press_position
+                        .is_some_and(|press_position| was_pressed && rect.contains(press_position))
+                    {
                         match entry.kind {
                             BrowserEntryKind::Directory => {
                                 self.path.clone_from(&entry.path);
@@ -339,7 +350,10 @@ impl App for VoltApp {
                 // Likely should have much better handling of this particular error here
                 .unwrap_or(Rect {
                     min: Pos2 { x: 0., y: 0. },
-                    max: Pos2 { x: temp_w, y: temp_h }
+                    max: Pos2 {
+                        x: temp_w,
+                        y: temp_h,
+                    },
                 });
             ui.painter().rect_filled(
                 Rect::from_min_size(Pos2::ZERO, viewport.size()),
