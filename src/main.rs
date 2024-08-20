@@ -9,6 +9,8 @@ use std::{cmp::Ordering, collections::BTreeSet, fs::read_dir, path::PathBuf};
 use strum::Display;
 mod blerp;
 mod test;
+
+// TODO: Move everything into components (visual)
 mod visual;
 
 fn main() -> Result {
