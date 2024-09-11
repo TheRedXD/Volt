@@ -1,5 +1,6 @@
 pub mod wavefile;
 pub mod processing;
+pub mod device;
 
 pub fn f32_samples_mono_to_stereo(samples: &[f32]) -> Vec<f32> {
     return samples.iter().flat_map(|x| [*x, *x]).collect();

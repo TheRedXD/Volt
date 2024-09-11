@@ -16,10 +16,45 @@ mod browser;
 use visual::ThemeColors;
 use browser::{ Browser, BrowserCategory, BrowserEntry, BrowserEntryKind };
 
+// FIXME: Temporary rodio playback, might need to use cpal or make rodio proper
+use rodio::{Decoder, OutputStream, Sink};
+use rodio::source::{SineWave, Source};
+use std::time::Duration;
+
+use std::io::BufReader;
+use std::fs::File;
+
 fn main() -> Result {
+    // Panic handling
+    std::panic::set_hook(Box::new(|panic_info| {
+        if let Some(location) = panic_info.location() {
+            println!(
+                "Panic occurred in file '{}' at line {}!",
+                location.file(),
+                location.line(),
+            );
+
+            // Read the file and display the line
+            if let Ok(content) = std::fs::read_to_string(location.file()) {
+                let lines: Vec<&str> = content.lines().collect();
+                if let Some(line) = lines.get((location.line() - 1) as usize) {
+                    println!("\n{:>4} | {}", location.line(), line);
+                    println!("     | {: >width$}^", "", width = (location.column() - 1) as usize);
+                }
+            }
+        }
+
+        if let Some(message) = panic_info.payload().downcast_ref::<String>() {
+            println!("Panic message: {}", message);
+        } else if let Some(message) = panic_info.payload().downcast_ref::<&str>() {
+            println!("Panic message: {}", message);
+        } else {
+            println!("Panic occurred, message unknown.");
+        }
+    }));
     let title = "Volt";
     let native_options = NativeOptions {
-        vsync: false,
+        vsync: true,
         ..Default::default()
     };
     run_native(
@@ -168,7 +203,17 @@ impl Browser {
                                 break;
                             }
                             BrowserEntryKind::Audio => {
-                                // TODO play some audio
+                                // TODO: Proper preview implementation with cpal. This is temporary (or at least make it work well with a proper preview widget)
+                                // Also, don't spawn a new thread - instead, dedicate a thread for preview
+                                let file = BufReader::new(File::open(entry.path.as_path()).unwrap());
+                                std::thread::spawn(move || {
+                                    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+                                    let source = Decoder::new(file).unwrap();
+                                    let sink = Sink::try_new(&stream_handle).unwrap();
+                                    // let source = SineWave::new(440.0).take_duration(Duration::from_secs_f32(0.25)).amplify(0.20);
+                                    sink.append(source);
+                                    sink.sleep_until_end();
+                                });
                             }
                             BrowserEntryKind::File => {
                                 that_detached(entry.path.clone()).unwrap();
@@ -282,5 +327,21 @@ impl App for VoltApp {
 
             self.browser.paint(ctx, ui, &viewport, &self.themes);
         });
+    }
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        // Clean up any resources
+        self.browser.entries.clear();
+
+        // Log the exit
+        println!("Volt is exiting!");
+
+        // Perform any final saves or cleanup
+        // For example, you might want to save user preferences or state
+        // self.save_state();
+
+        // Close any open connections or files
+        // self.close_connections();
+
+        // You can add more cleanup code here as needed
     }
 }
