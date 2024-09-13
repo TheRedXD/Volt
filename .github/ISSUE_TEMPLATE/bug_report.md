@@ -2,8 +2,8 @@
 name: Bug report
 about: Create a report to help us improve Volt
 title: ''
-labels: enhancement
-assignees: TheRedXD
+labels: bug, for review
+assignees: ''
 
 ---
 
