@@ -287,7 +287,11 @@ impl Browser {
                         ui.painter().text(
                             pos2(30., y),
                             Align2::LEFT_TOP,
-                            name.to_string().unicode_truncate(30).0,
+                            if name.to_string().len() > 30 {
+                                name.to_string().unicode_truncate(30).0.to_string() + "..."
+                            } else {
+                                name.to_string()
+                            },
                             FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
                             if hovered(ctx, rect) {
                                 theme.browser_unselected_hover_button_fg
