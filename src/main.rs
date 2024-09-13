@@ -17,6 +17,8 @@ use visual::ThemeColors;
 use browser::{ Browser, BrowserCategory, BrowserEntry, BrowserEntryKind };
 use std::fs::File;
 
+use unicode_truncate::UnicodeTruncateStr;
+
 fn main() -> Result {
     let args: Vec<String> = std::env::args().collect();
     if args.contains(&"--info".to_string()) {
@@ -285,11 +287,7 @@ impl Browser {
                         ui.painter().text(
                             pos2(30., y),
                             Align2::LEFT_TOP,
-                            if name.len() > 30 {
-                                name[..30].to_string() + "..."
-                            } else {
-                                name.to_string()
-                            },
+                            name.to_string().unicode_truncate(30).0,
                             FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
                             if hovered(ctx, rect) {
                                 theme.browser_unselected_hover_button_fg
