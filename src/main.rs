@@ -20,7 +20,7 @@ use std::fs::File;
 fn main() -> Result {
     let args: Vec<String> = std::env::args().collect();
     if args.contains(&"--info".to_string()) {
-        let mut distro = "None".into();
+        let mut distro: String = "None".into();
         #[cfg(target_os = "linux")]
         {
             if let Ok(release_file) = std::fs::read_to_string("/etc/os-release") {
