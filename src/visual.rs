@@ -2,6 +2,7 @@ use egui::Color32;
 
 // Expose components
 pub mod switch;
+pub mod navbar;
 
 // Theming
 #[derive(Debug, Clone, PartialEq, Eq)]
