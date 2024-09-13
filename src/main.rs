@@ -287,7 +287,7 @@ impl Browser {
                         ui.painter().text(
                             pos2(30., y),
                             Align2::LEFT_TOP,
-                            if name.to_string().len() > 30 {
+                            if name.to_string().unicode_truncate(30).1 == 30 {
                                 name.to_string().unicode_truncate(30).0.to_string() + "..."
                             } else {
                                 name.to_string()
