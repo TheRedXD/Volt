@@ -15,13 +15,6 @@ mod browser;
 
 use visual::ThemeColors;
 use browser::{ Browser, BrowserCategory, BrowserEntry, BrowserEntryKind };
-
-// FIXME: Temporary rodio playback, might need to use cpal or make rodio proper
-use rodio::{Decoder, OutputStream, Sink};
-use rodio::source::{SineWave, Source};
-use std::time::Duration;
-
-use std::io::BufReader;
 use std::fs::File;
 
 fn main() -> Result {
@@ -205,15 +198,8 @@ impl Browser {
                             BrowserEntryKind::Audio => {
                                 // TODO: Proper preview implementation with cpal. This is temporary (or at least make it work well with a proper preview widget)
                                 // Also, don't spawn a new thread - instead, dedicate a thread for preview
-                                let file = BufReader::new(File::open(entry.path.as_path()).unwrap());
-                                std::thread::spawn(move || {
-                                    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
-                                    let source = Decoder::new(file).unwrap();
-                                    let sink = Sink::try_new(&stream_handle).unwrap();
-                                    // let source = SineWave::new(440.0).take_duration(Duration::from_secs_f32(0.25)).amplify(0.20);
-                                    sink.append(source);
-                                    sink.sleep_until_end();
-                                });
+                                let file = File::open(entry.path.as_path()).unwrap();
+                                self.preview.play_file(file);
                             }
                             BrowserEntryKind::File => {
                                 that_detached(entry.path.clone()).unwrap();
@@ -249,6 +235,7 @@ impl VoltApp {
                 entries: BTreeSet::new(),
                 selected_category: BrowserCategory::Files,
                 path: "/".into(),
+                preview: browser::Preview { preview_thread: Some(std::thread::spawn(|| {})) }
             },
             themes: ThemeColors::default(),
         }
