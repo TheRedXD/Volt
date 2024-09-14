@@ -64,7 +64,9 @@ impl VoltApp {
                 offset_y: 0.,
                 began_scroll: false,
                 dragging_audio: false,
-                dragging_audio_text: "".into()
+                dragging_audio_text: "".into(),
+                sidebar_width: 300.,
+                started_drag: false
             },
             themes: ThemeColors::default(),
         }

@@ -92,7 +92,9 @@ pub struct Browser {
     pub offset_y: f32,
     pub began_scroll: bool,
     pub dragging_audio: bool,
-    pub dragging_audio_text: String
+    pub dragging_audio_text: String,
+    pub sidebar_width: f32,
+    pub started_drag: bool
 }
 
 impl Browser {
@@ -138,7 +140,7 @@ impl Browser {
             Rect {
                 min: Pos2 { x: 0., y: 50. },
                 max: Pos2 {
-                    x: 300.,
+                    x: self.sidebar_width,
                     y: viewport.height(),
                 },
             },
@@ -147,9 +149,9 @@ impl Browser {
         );
         ui.painter().line_segment(
             [
-                Pos2 { x: 300., y: 50. },
+                Pos2 { x: self.sidebar_width, y: 50. },
                 Pos2 {
-                    x: 300.,
+                    x: self.sidebar_width,
                     y: viewport.height(),
                 },
             ],
@@ -166,11 +168,11 @@ impl Browser {
         for (category, rect) in [
             (
                 BrowserCategory::Files,
-                Rect::from_min_size(pos2(0., 55.), vec2(150., 30.)),
+                Rect::from_min_size(pos2(0., 55.), vec2(self.sidebar_width/2., 30.)),
             ),
             (
                 BrowserCategory::Devices,
-                Rect::from_min_size(pos2(150., 55.), vec2(150., 30.)),
+                Rect::from_min_size(pos2(self.sidebar_width/2., 55.), vec2(self.sidebar_width/2., 30.)),
             ),
         ] {
             let open = self.selected_category == category;
@@ -183,7 +185,7 @@ impl Browser {
         }
         let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
         if let Some(pos) = ctx.input(|i| i.pointer.latest_pos()) {
-            if pos.x <= 300. && !self.began_scroll && scroll != 0. {
+            if pos.x <= self.sidebar_width && !self.began_scroll && scroll != 0. {
                 self.began_scroll = true;
             }
         }
@@ -218,10 +220,38 @@ impl Browser {
                 // Clamp the offset
                 self.offset_y = self.offset_y.clamp(-max_offset.max(0.0), 0.0);
 
+                // Handle sidebar resizing
+                let resize_rect = Rect::from_min_size(pos2(self.sidebar_width - 5., 50.), vec2(10., viewport.height() - 50.));
+                if ctx.rect_contains_pointer(LayerId::background(), resize_rect) {
+                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeHorizontal);
+                    if ctx.input(|i| i.pointer.primary_pressed()) {
+                        self.started_drag = true;
+                    }
+                }
+                if self.started_drag {
+                    if let Some(mouse_pos) = ctx.pointer_hover_pos() {
+                        self.sidebar_width = mouse_pos.x.clamp(100.0, viewport.width() / 2.0);
+                    }
+                    if ctx.input(|i| i.pointer.primary_released()) {
+                        self.started_drag = false;
+                    }
+                }
+
+                // Draw resize handle
+                if let Some(mouse_pos) = ctx.pointer_hover_pos() {
+                    if (mouse_pos.x - self.sidebar_width).abs() <= 20.0 {
+                        ui.painter().rect_filled(
+                            resize_rect,
+                            0.0,
+                            theme.browser_outline.gamma_multiply(0.2),
+                        );
+                    }
+                }
+
                 for (index, entry) in entries.iter().enumerate() {
                     #[allow(clippy::cast_precision_loss)]
                     let y = (index as f32).mul_add(16.0, 90.);
-                    let rect = &Rect::from_min_size(pos2(0., y + self.offset_y), vec2(300., 16.));
+                    let rect = &Rect::from_min_size(pos2(0., y + self.offset_y), vec2(self.sidebar_width, 16.));
                     egui::Frame::none()
                         .show(ui, |ui| {
                             ui.allocate_space(ui.available_size());
@@ -234,6 +264,7 @@ impl Browser {
                                     "• Invalid Name •"
                                 })
                             };
+                            let chars_to_truncate = 30;
                             if y + self.offset_y >= 90. {
                                 if invalid {
                                     let text_width = ui.painter().layout_no_wrap(
@@ -250,8 +281,8 @@ impl Browser {
                                 ui.painter().text(
                                     pos2(30., y + self.offset_y),
                                     Align2::LEFT_TOP,
-                                    if name.to_string().unicode_truncate(30).1 == 30 {
-                                        name.to_string().unicode_truncate(30).0.to_string() + "..."
+                                    if name.to_string().unicode_truncate(chars_to_truncate).1 == 30 {
+                                        name.to_string().unicode_truncate(chars_to_truncate).0.to_string() + "..."
                                     } else {
                                         name.to_string()
                                     },
@@ -287,7 +318,7 @@ impl Browser {
                         let is_dragging = ctx.input(|i| i.pointer.is_decidedly_dragging());
                         let cursor_pos = ctx.input(|i| i.pointer.hover_pos());
 
-                        if is_dragging && cursor_pos.is_some() && rect.contains(cursor_pos.unwrap()) && !self.dragging_audio {
+                        if is_dragging && cursor_pos.is_some() && rect.contains(cursor_pos.unwrap()) && !self.dragging_audio && cursor_pos.unwrap().x <= self.sidebar_width-10. && !self.started_drag {
                             self.dragging_audio = true;
                             self.dragging_audio_text = entry.path.file_name().unwrap().to_str().unwrap().to_string();
                         }
@@ -308,7 +339,7 @@ impl Browser {
                         }
                     }
                     if press_position
-                        .is_some_and(|press_position| was_pressed && rect.contains(press_position))
+                        .is_some_and(|press_position| was_pressed && rect.contains(press_position) && press_position.x <= self.sidebar_width-10.)
                         && press_position.unwrap().y >= 90. && !self.dragging_audio
                     {
                         match entry.kind {
