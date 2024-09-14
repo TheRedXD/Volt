@@ -14,6 +14,9 @@ pub struct ThemeColors {
     pub browser_selected_button_fg: Color32,
     pub browser_unselected_button_fg: Color32,
     pub browser_unselected_hover_button_fg: Color32,
+    pub browser_invalid_name_bg: Color32,
+    pub browser_unselected_hover_button_fg_invalid: Color32,
+    pub browser_unselected_button_fg_invalid: Color32,
     pub bg_text: Color32,
 }
 
@@ -27,6 +30,9 @@ impl Default for ThemeColors {
             browser_selected_button_fg: Color32::from_hex("#ffcf7b").unwrap_or_default(),
             browser_unselected_button_fg: Color32::from_hex("#646d88").unwrap_or_default(),
             browser_unselected_hover_button_fg: Color32::from_hex("#8591b5").unwrap_or_default(),
+            browser_invalid_name_bg: Color32::from_hex("#ff000010").unwrap_or_default(),
+            browser_unselected_button_fg_invalid: Color32::from_hex("#a46d88").unwrap_or_default(),
+            browser_unselected_hover_button_fg_invalid: Color32::from_hex("#f591b5").unwrap_or_default(),
             bg_text: Color32::from_hex("#646987").unwrap_or_default(),
         }
     }

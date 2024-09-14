@@ -90,7 +90,9 @@ pub struct Browser {
     pub path: PathBuf,
     pub preview: Preview,
     pub offset_y: f32,
-    pub began_scroll: bool
+    pub began_scroll: bool,
+    pub dragging_audio: bool,
+    pub dragging_audio_text: String
 }
 
 impl Browser {
@@ -223,12 +225,28 @@ impl Browser {
                     egui::Frame::none()
                         .show(ui, |ui| {
                             ui.allocate_space(ui.available_size());
+                            let mut invalid = false;
                             let name = if entry.path == self.path.parent().unwrap_or(&self.path) {
                                 ".."
                             } else {
-                                entry.path.file_name().unwrap().to_str().unwrap()
+                                entry.path.file_name().unwrap().to_str().unwrap_or_else(|| {
+                                    invalid = true;
+                                    "• Invalid Name •"
+                                })
                             };
                             if y + self.offset_y >= 90. {
+                                if invalid {
+                                    let text_width = ui.painter().layout_no_wrap(
+                                        name.to_string(),
+                                        FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
+                                        theme.browser_unselected_button_fg,
+                                    ).rect.width();
+                                    ui.painter().rect_filled(
+                                        Rect::from_min_size(pos2(30., y + self.offset_y), vec2(text_width, 16.)),
+                                        0.0,
+                                        theme.browser_invalid_name_bg,
+                                    );
+                                }
                                 ui.painter().text(
                                     pos2(30., y + self.offset_y),
                                     Align2::LEFT_TOP,
@@ -239,9 +257,17 @@ impl Browser {
                                     },
                                     FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
                                     if hovered(ctx, rect) {
-                                        theme.browser_unselected_hover_button_fg
+                                        if invalid {
+                                            theme.browser_unselected_hover_button_fg_invalid
+                                        } else {
+                                            theme.browser_unselected_hover_button_fg
+                                        }
                                     } else {
-                                        theme.browser_unselected_button_fg
+                                        if invalid {
+                                            theme.browser_unselected_button_fg_invalid
+                                        } else {
+                                            theme.browser_unselected_button_fg
+                                        }
                                     },
                                 )
                             } else {
@@ -257,9 +283,33 @@ impl Browser {
                         })
                         .paint_at(ui, Rect::from_min_size(pos2(10., y + 2. + self.offset_y), vec2(14., 14.)));
                     }
+                    if entry.kind == BrowserEntryKind::Audio {
+                        let is_dragging = ctx.input(|i| i.pointer.is_decidedly_dragging());
+                        let cursor_pos = ctx.input(|i| i.pointer.hover_pos());
+
+                        if is_dragging && cursor_pos.is_some() && rect.contains(cursor_pos.unwrap()) && !self.dragging_audio {
+                            self.dragging_audio = true;
+                            self.dragging_audio_text = entry.path.file_name().unwrap().to_str().unwrap().to_string();
+                        }
+
+                        if self.dragging_audio && cursor_pos.is_some() && self.dragging_audio_text == entry.path.file_name().unwrap().to_str().unwrap().to_string() {
+                            ui.painter().text(
+                                cursor_pos.unwrap() + vec2(5.0, 2.0),
+                                Align2::CENTER_CENTER,
+                                &self.dragging_audio_text,
+                                FontId::new(14.0, FontFamily::Name("IBMPlexMono".into())),
+                                theme.browser_selected_button_fg,
+                            );
+                        }
+
+                        if !is_dragging {
+                            self.dragging_audio = false;
+                            self.dragging_audio_text = String::new();
+                        }
+                    }
                     if press_position
                         .is_some_and(|press_position| was_pressed && rect.contains(press_position))
-                        && press_position.unwrap().y >= 90.
+                        && press_position.unwrap().y >= 90. && !self.dragging_audio
                     {
                         match entry.kind {
                             BrowserEntryKind::Directory => {

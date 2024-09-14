@@ -62,7 +62,9 @@ impl VoltApp {
                 path: "/".into(),
                 preview: browser::Preview { preview_thread: Some(std::thread::spawn(|| {})) },
                 offset_y: 0.,
-                began_scroll: false
+                began_scroll: false,
+                dragging_audio: false,
+                dragging_audio_text: "".into()
             },
             themes: ThemeColors::default(),
         }
@@ -91,7 +93,7 @@ impl App for VoltApp {
                             .unwrap()
                             .file_name()
                             .to_str()
-                            .unwrap()
+                            .unwrap_or_default()
                             .ends_with(extension)
                     })
                 {
