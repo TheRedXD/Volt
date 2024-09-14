@@ -264,24 +264,30 @@ impl Browser {
                                     "• Invalid Name •"
                                 })
                             };
-                            let chars_to_truncate = 30;
+                            let chars_to_truncate;
                             if y + self.offset_y >= 90. {
+                                let text_width = ui.painter().layout_no_wrap(
+                                    name.to_string(),
+                                    FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
+                                    theme.browser_unselected_button_fg,
+                                ).rect.width();
+                                let char_width = ui.painter().layout_no_wrap(
+                                    "a".to_string(),
+                                    FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
+                                    theme.browser_unselected_button_fg,
+                                ).rect.width();
                                 if invalid {
-                                    let text_width = ui.painter().layout_no_wrap(
-                                        name.to_string(),
-                                        FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
-                                        theme.browser_unselected_button_fg,
-                                    ).rect.width();
                                     ui.painter().rect_filled(
                                         Rect::from_min_size(pos2(30., y + self.offset_y), vec2(text_width, 16.)),
                                         0.0,
                                         theme.browser_invalid_name_bg,
                                     );
                                 }
+                                chars_to_truncate = (self.sidebar_width / char_width) as usize - 10;
                                 ui.painter().text(
                                     pos2(30., y + self.offset_y),
                                     Align2::LEFT_TOP,
-                                    if name.to_string().unicode_truncate(chars_to_truncate).1 == 30 {
+                                    if name.to_string().unicode_truncate(chars_to_truncate).1 == chars_to_truncate {
                                         name.to_string().unicode_truncate(chars_to_truncate).0.to_string() + "..."
                                     } else {
                                         name.to_string()
