@@ -64,7 +64,6 @@ impl VoltApp {
                     preview_thread: Some(std::thread::spawn(|| {})),
                 },
                 offset_y: 0.,
-                began_scroll: false,
                 dragging_audio: false,
                 dragging_audio_text: String::new(),
                 sidebar_width: 300.,

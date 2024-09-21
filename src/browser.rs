@@ -1,7 +1,4 @@
-use itertools::Itertools;
-use std::iter::once;
-use std::thread::JoinHandle;
-use std::{cmp::Ordering, collections::BTreeSet, fs::File, path::PathBuf};
+use std::{cmp::Ordering, collections::BTreeSet, fs::File, path::PathBuf, thread::JoinHandle};
 use strum::Display;
 
 // FIXME: Temporary rodio playback, might need to use cpal or make rodio proper
@@ -57,6 +54,7 @@ impl PartialOrd for BrowserEntry {
 
 #[derive(Display, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BrowserEntryKind {
+    UpOneLevel,
     Directory { expanded: bool },
     Audio,
     File,
@@ -93,7 +91,6 @@ pub struct Browser {
     pub path: PathBuf,
     pub preview: Preview,
     pub offset_y: f32,
-    pub began_scroll: bool,
     pub dragging_audio: bool,
     pub dragging_audio_text: String,
     pub sidebar_width: f32,
@@ -195,24 +192,22 @@ impl Browser {
         }
         let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
         if let Some(pos) = ctx.input(|i| i.pointer.latest_pos()) {
-            if pos.x <= self.sidebar_width && !self.began_scroll && scroll != 0. {
-                self.began_scroll = true;
+            if pos.x <= self.sidebar_width && scroll != 0. {
+                self.offset_y += scroll;
             }
-        }
-        if self.began_scroll && scroll != 0. {
-            self.offset_y += scroll;
-        }
-        if self.began_scroll && scroll == 0. {
-            self.began_scroll = false;
         }
         match self.selected_category {
             BrowserCategory::Files => {
                 // Add ".." entry if not at root
                 let parent_entry = self.path.parent().map(|parent| BrowserEntry {
                     path: parent.to_path_buf(),
-                    kind: BrowserEntryKind::Directory { expanded: false },
+                    kind: BrowserEntryKind::UpOneLevel,
                 });
-                let entries = parent_entry.as_ref().into_iter().chain(self.entries.iter()).enumerate();
+                let entries = parent_entry
+                    .as_ref()
+                    .into_iter()
+                    .chain(self.entries.iter())
+                    .enumerate();
 
                 // Calculate the maximum offset based on the number of entries and browser height
                 let max_entries = self.entries.len() + usize::from(parent_entry.is_some());
@@ -231,8 +226,8 @@ impl Browser {
                     vec2(10., viewport.height() - 50.),
                 );
                 if ctx.rect_contains_pointer(LayerId::background(), resize_rect) {
-                    ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeHorizontal);
-                    if ctx.input(|i| i.pointer.primary_pressed()) {
+                    ui.output_mut(|output| output.cursor_icon = egui::CursorIcon::ResizeHorizontal);
+                    if ctx.input(|input| input.pointer.primary_pressed()) {
                         self.started_drag = true;
                     }
                 }
@@ -266,20 +261,25 @@ impl Browser {
                     egui::Frame::none().show(ui, |ui| {
                         ui.allocate_space(ui.available_size());
                         let mut invalid = false;
-                        let name = if entry.path == self.path.parent().unwrap_or(&self.path) {
-                            ".."
+                        let name = if entry.kind == BrowserEntryKind::UpOneLevel {
+                            "..".into()
                         } else {
-                            entry.path.file_name().unwrap().to_str().unwrap_or_else(|| {
-                                invalid = true;
-                                "• Invalid Name •"
-                            })
-                        };
+                            let os_str = entry.path.file_name().unwrap();
+                            match os_str.to_str() {
+                                Some(str) => str.into(),
+                                None => {
+                                    invalid = true;
+                                    String::from_utf8_lossy(os_str.as_encoded_bytes())
+                                }
+                            }
+                        }
+                        .to_string();
                         let chars_to_truncate;
                         if y + self.offset_y >= 90. {
                             let text_width = ui
                                 .painter()
                                 .layout_no_wrap(
-                                    name.to_string(),
+                                    name.clone(),
                                     FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
                                     theme.browser_unselected_button_fg,
                                 )
@@ -311,16 +311,10 @@ impl Browser {
                             ui.painter().text(
                                 pos2(30., y + self.offset_y),
                                 Align2::LEFT_TOP,
-                                if name.to_string().unicode_truncate(chars_to_truncate).1
-                                    == chars_to_truncate
-                                {
-                                    name.to_string()
-                                        .unicode_truncate(chars_to_truncate)
-                                        .0
-                                        .to_string()
-                                        + "..."
+                                if name.unicode_truncate(chars_to_truncate).1 == chars_to_truncate {
+                                    name.unicode_truncate(chars_to_truncate).0.to_string() + "..."
                                 } else {
-                                    name.to_string()
+                                    name
                                 },
                                 FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
                                 if hovered(ctx, rect) {
@@ -344,17 +338,27 @@ impl Browser {
                     });
 
                     if y + self.offset_y >= 90. {
-                        Image::new(match entry.kind {
+                        if let Some(image) = match entry.kind {
+                            BrowserEntryKind::UpOneLevel => None,
                             BrowserEntryKind::Directory { expanded } => {
-                                include_image!("images/icons/folder.png")
+                                Some(include_image!("images/icons/folder.png"))
+                                // TODO Add a folder open icon
                             }
-                            BrowserEntryKind::Audio => include_image!("images/icons/audio.png"),
-                            BrowserEntryKind::File => include_image!("images/icons/file.png"),
-                        })
-                        .paint_at(
-                            ui,
-                            Rect::from_min_size(pos2(10., y + 2. + self.offset_y), vec2(14., 14.)),
-                        );
+                            BrowserEntryKind::Audio => {
+                                Some(include_image!("images/icons/audio.png"))
+                            }
+                            BrowserEntryKind::File => Some(include_image!("images/icons/file.png")),
+                        }
+                        .map(Image::new)
+                        {
+                            image.paint_at(
+                                ui,
+                                Rect::from_min_size(
+                                    pos2(10., y + 2. + self.offset_y),
+                                    vec2(14., 14.),
+                                ),
+                            )
+                        }
                     }
                     if entry.kind == BrowserEntryKind::Audio {
                         let is_dragging = ctx.input(|i| i.pointer.is_decidedly_dragging());
@@ -404,14 +408,10 @@ impl Browser {
                         && !self.dragging_audio
                     {
                         match entry.kind {
-                            BrowserEntryKind::Directory { expanded } => {
-                                if entry.path == self.path.parent().unwrap_or(&self.path) {
-                                    self.path =
-                                        self.path.parent().unwrap_or(&self.path).to_path_buf();
-                                } else {
-                                    self.path.clone_from(&entry.path);
-                                }
-                                break;
+                            BrowserEntryKind::UpOneLevel
+                            | BrowserEntryKind::Directory { expanded: _ } => {
+                                self.path = entry.path.to_path_buf();
+                                // TODO Implement directory expansion
                             }
                             BrowserEntryKind::Audio => {
                                 // TODO: Proper preview implementation with cpal. This is temporary (or at least make it work well with a proper preview widget)
