@@ -262,18 +262,17 @@ impl Browser {
                         ui.allocate_space(ui.available_size());
                         let mut invalid = false;
                         let name = if entry.kind == BrowserEntryKind::UpOneLevel {
-                            "..".into()
+                            "..".to_string()
                         } else {
                             let os_str = entry.path.file_name().unwrap();
-                            match os_str.to_str() {
-                                Some(str) => str.into(),
-                                None => {
+                            os_str.to_str().map_or_else(
+                                || {
                                     invalid = true;
-                                    String::from_utf8_lossy(os_str.as_encoded_bytes())
-                                }
-                            }
-                        }
-                        .to_string();
+                                    String::from_utf8_lossy(os_str.as_encoded_bytes()).to_string()
+                                },
+                                ToString::to_string,
+                            )
+                        };
                         let chars_to_truncate;
                         if y + self.offset_y >= 90. {
                             let text_width = ui
@@ -340,7 +339,7 @@ impl Browser {
                     if y + self.offset_y >= 90. {
                         if let Some(image) = match entry.kind {
                             BrowserEntryKind::UpOneLevel => None,
-                            BrowserEntryKind::Directory { expanded } => {
+                            BrowserEntryKind::Directory { expanded: _ } => {
                                 Some(include_image!("images/icons/folder.png"))
                                 // TODO Add a folder open icon
                             }
@@ -357,7 +356,7 @@ impl Browser {
                                     pos2(10., y + 2. + self.offset_y),
                                     vec2(14., 14.),
                                 ),
-                            )
+                            );
                         }
                     }
                     if entry.kind == BrowserEntryKind::Audio {
@@ -381,18 +380,19 @@ impl Browser {
                                 .to_string();
                         }
 
-                        if self.dragging_audio
-                            && cursor_pos.is_some()
-                            && self.dragging_audio_text
-                                == *entry.path.file_name().unwrap().to_str().unwrap()
-                        {
-                            ui.painter().text(
-                                cursor_pos.unwrap() + vec2(5.0, 2.0),
-                                Align2::CENTER_CENTER,
-                                &self.dragging_audio_text,
-                                FontId::new(14.0, FontFamily::Name("IBMPlexMono".into())),
-                                theme.browser_selected_button_fg,
-                            );
+                        if let Some(cursor_pos) = cursor_pos {
+                            if self.dragging_audio
+                                && self.dragging_audio_text
+                                    == *entry.path.file_name().unwrap().to_str().unwrap()
+                            {
+                                ui.painter().text(
+                                    cursor_pos + vec2(5.0, 2.0),
+                                    Align2::CENTER_CENTER,
+                                    &self.dragging_audio_text,
+                                    FontId::new(14.0, FontFamily::Name("IBMPlexMono".into())),
+                                    theme.browser_selected_button_fg,
+                                );
+                            }
                         }
 
                         if !is_dragging {
@@ -410,7 +410,7 @@ impl Browser {
                         match entry.kind {
                             BrowserEntryKind::UpOneLevel
                             | BrowserEntryKind::Directory { expanded: _ } => {
-                                self.path = entry.path.to_path_buf();
+                                self.path = entry.path.clone();
                                 // TODO Implement directory expansion
                             }
                             BrowserEntryKind::Audio => {

@@ -1,4 +1,4 @@
-use eframe::{egui, run_native, App, CreationContext, NativeOptions, Result};
+use eframe::{egui, run_native, App, CreationContext, NativeOptions};
 use egui::{
     Align2, CentralPanel, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Pos2,
     Rect,
@@ -15,9 +15,9 @@ mod visual;
 use browser::{Browser, BrowserCategory, BrowserEntry, BrowserEntryKind};
 use visual::ThemeColors;
 
-fn main() -> Result {
+fn main() -> eframe::Result {
     if std::env::args().any(|x| x == *"--info") {
-        return info::output_info();
+        info::dump();
     }
     // Panic handling
     std::panic::set_hook(Box::new(|panic_info| {
@@ -87,9 +87,7 @@ impl App for VoltApp {
                 if entry.unwrap().metadata().unwrap().is_dir() {
                     self.browser.entries.insert(BrowserEntry {
                         path,
-                        kind: BrowserEntryKind::Directory {
-                            expanded: false,
-                        },
+                        kind: BrowserEntryKind::Directory { expanded: false },
                     });
                 } else if [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
                     .into_iter()
