@@ -1,12 +1,15 @@
 use std::panic::PanicHookInfo;
 
 pub fn output_info() -> Result<(), eframe::Error> {
-    let mut distro: String = "None".into();
+    let distro: String = "None".into();
     #[cfg(target_os = "linux")]
     {
         if let Ok(release_file) = std::fs::read_to_string("/etc/os-release") {
             if let Some(line) = release_file.lines().find(|l| l.starts_with("PRETTY_NAME=")) {
-                distro = line.split('=').nth(1).unwrap_or("Unknown")
+                distro = line
+                    .split('=')
+                    .nth(1)
+                    .unwrap_or("Unknown")
                     .trim_matches('"')
                     .to_string();
             }
@@ -18,7 +21,7 @@ pub fn output_info() -> Result<(), eframe::Error> {
     println!("CPU: {}", get_cpu_info());
     println!("GPU: {}", get_gpu_info());
     println!("OS Family: {}", std::env::consts::FAMILY);
-    println!("OS Distribution: {}", distro);
+    println!("OS Distribution: {distro}");
     println!("Architecture: {}", std::env::consts::ARCH);
 
     fn get_desktop_environment() -> String {
@@ -68,7 +71,11 @@ pub fn output_info() -> Result<(), eframe::Error> {
         #[cfg(target_os = "macos")]
         {
             use std::process::Command;
-            if let Ok(output) = Command::new("sysctl").arg("-n").arg("machdep.cpu.brand_string").output() {
+            if let Ok(output) = Command::new("sysctl")
+                .arg("-n")
+                .arg("machdep.cpu.brand_string")
+                .output()
+            {
                 if let Ok(cpu) = String::from_utf8(output.stdout) {
                     return cpu.trim().to_string();
                 }
@@ -83,8 +90,16 @@ pub fn output_info() -> Result<(), eframe::Error> {
         {
             if let Ok(output) = std::process::Command::new("lspci").output() {
                 if let Ok(stdout) = String::from_utf8(output.stdout) {
-                    if let Some(gpu_line) = stdout.lines().find(|line| line.contains("VGA") || line.contains("3D")) {
-                        return gpu_line.split(':').nth(2).unwrap_or("Unknown GPU").trim().to_string();
+                    if let Some(gpu_line) = stdout
+                        .lines()
+                        .find(|line| line.contains("VGA") || line.contains("3D"))
+                    {
+                        return gpu_line
+                            .split(':')
+                            .nth(2)
+                            .unwrap_or("Unknown GPU")
+                            .trim()
+                            .to_string();
                     }
                 }
             }
@@ -92,7 +107,10 @@ pub fn output_info() -> Result<(), eframe::Error> {
 
         #[cfg(target_os = "windows")]
         {
-            if let Ok(output) = std::process::Command::new("wmic").args(&["path", "win32_VideoController", "get", "name"]).output() {
+            if let Ok(output) = std::process::Command::new("wmic")
+                .args(&["path", "win32_VideoController", "get", "name"])
+                .output()
+            {
                 if let Ok(stdout) = String::from_utf8(output.stdout) {
                     if let Some(gpu) = stdout.lines().nth(1) {
                         return gpu.trim().to_string();
@@ -103,10 +121,20 @@ pub fn output_info() -> Result<(), eframe::Error> {
 
         #[cfg(target_os = "macos")]
         {
-            if let Ok(output) = std::process::Command::new("system_profiler").arg("SPDisplaysDataType").output() {
+            if let Ok(output) = std::process::Command::new("system_profiler")
+                .arg("SPDisplaysDataType")
+                .output()
+            {
                 if let Ok(stdout) = String::from_utf8(output.stdout) {
-                    if let Some(gpu_line) = stdout.lines().find(|line| line.contains("Chipset Model:")) {
-                        return gpu_line.split(':').nth(1).unwrap_or("Unknown GPU").trim().to_string();
+                    if let Some(gpu_line) =
+                        stdout.lines().find(|line| line.contains("Chipset Model:"))
+                    {
+                        return gpu_line
+                            .split(':')
+                            .nth(1)
+                            .unwrap_or("Unknown GPU")
+                            .trim()
+                            .to_string();
                     }
                 }
             }
@@ -115,7 +143,7 @@ pub fn output_info() -> Result<(), eframe::Error> {
         "Unknown GPU".to_string()
     }
     println!("Version: {}", env!("CARGO_PKG_VERSION"));
-    return Ok(());
+    Ok(())
 }
 
 pub fn panic_handler(panic_info: &PanicHookInfo<'_>) {
@@ -131,15 +159,19 @@ pub fn panic_handler(panic_info: &PanicHookInfo<'_>) {
             let lines: Vec<&str> = content.lines().collect();
             if let Some(line) = lines.get((location.line() - 1) as usize) {
                 println!("\n{:>4} | {}", location.line(), line);
-                println!("     | {: >width$}^", "", width = (location.column() - 1) as usize);
+                println!(
+                    "     | {: >width$}^",
+                    "",
+                    width = (location.column() - 1) as usize
+                );
             }
         }
     }
 
     if let Some(message) = panic_info.payload().downcast_ref::<String>() {
-        println!("Panic message: {}", message);
+        println!("Panic message: {message}");
     } else if let Some(message) = panic_info.payload().downcast_ref::<&str>() {
-        println!("Panic message: {}", message);
+        println!("Panic message: {message}");
     } else {
         println!("Panic occurred, message unknown.");
     }

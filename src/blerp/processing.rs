@@ -1,6 +1,6 @@
-pub mod live;
 pub mod export;
 pub mod generation;
+pub mod live;
 
 pub fn effect_clipper(threshold: f64, sample: f64) -> f64 {
     if sample > threshold {

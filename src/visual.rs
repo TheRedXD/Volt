@@ -1,8 +1,8 @@
 use egui::Color32;
 
 // Expose components
-pub mod switch;
 pub mod navbar;
+pub mod switch;
 
 // Theming
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,7 +32,8 @@ impl Default for ThemeColors {
             browser_unselected_hover_button_fg: Color32::from_hex("#8591b5").unwrap_or_default(),
             browser_invalid_name_bg: Color32::from_hex("#ff000010").unwrap_or_default(),
             browser_unselected_button_fg_invalid: Color32::from_hex("#a46d88").unwrap_or_default(),
-            browser_unselected_hover_button_fg_invalid: Color32::from_hex("#f591b5").unwrap_or_default(),
+            browser_unselected_hover_button_fg_invalid: Color32::from_hex("#f591b5")
+                .unwrap_or_default(),
             bg_text: Color32::from_hex("#646987").unwrap_or_default(),
         }
     }

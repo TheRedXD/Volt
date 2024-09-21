@@ -1,22 +1,22 @@
 use eframe::{egui, run_native, App, CreationContext, NativeOptions, Result};
 use egui::{
-    Align2, CentralPanel, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, LayerId, Pos2, Rect
+    Align2, CentralPanel, Color32, Context, FontData, FontDefinitions, FontFamily, FontId, Pos2,
+    Rect,
 };
 use egui_extras::install_image_loaders;
 use std::{collections::BTreeSet, fs::read_dir};
 mod blerp;
 mod test;
 // TODO: Move everything into components (visual)
-mod visual;
 mod browser;
 mod info;
+mod visual;
 
+use browser::{Browser, BrowserCategory, BrowserEntry, BrowserEntryKind};
 use visual::ThemeColors;
-use browser::{ Browser, BrowserCategory, BrowserEntry, BrowserEntryKind };
 
 fn main() -> Result {
-    let args: Vec<String> = std::env::args().collect();
-    if args.contains(&"--info".to_string()) {
+    if std::env::args().any(|x| x == *"--info") {
         return info::output_info();
     }
     // Panic handling
@@ -60,13 +60,15 @@ impl VoltApp {
                 entries: BTreeSet::new(),
                 selected_category: BrowserCategory::Files,
                 path: "/".into(),
-                preview: browser::Preview { preview_thread: Some(std::thread::spawn(|| {})) },
+                preview: browser::Preview {
+                    preview_thread: Some(std::thread::spawn(|| {})),
+                },
                 offset_y: 0.,
                 began_scroll: false,
                 dragging_audio: false,
-                dragging_audio_text: "".into(),
+                dragging_audio_text: String::new(),
                 sidebar_width: 300.,
-                started_drag: false
+                started_drag: false,
             },
             themes: ThemeColors::default(),
         }
@@ -86,7 +88,9 @@ impl App for VoltApp {
                 if entry.unwrap().metadata().unwrap().is_dir() {
                     self.browser.entries.insert(BrowserEntry {
                         path,
-                        kind: BrowserEntryKind::Directory,
+                        kind: BrowserEntryKind::Directory {
+                            expanded: false,
+                        },
                     });
                 } else if [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
                     .into_iter()
@@ -111,32 +115,34 @@ impl App for VoltApp {
                 }
             }
         }
-        CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
-            let viewport: Rect = ctx
-                .input(|input_state| input_state.viewport().inner_rect)
-                .unwrap_or_else(|| {
-                    let size = ctx.screen_rect().size();
-                    Rect::from_min_size(Pos2::ZERO, size)
-                });
+        CentralPanel::default()
+            .frame(egui::Frame::none())
+            .show(ctx, |ui| {
+                let viewport: Rect = ctx
+                    .input(|input_state| input_state.viewport().inner_rect)
+                    .unwrap_or_else(|| {
+                        let size = ctx.screen_rect().size();
+                        Rect::from_min_size(Pos2::ZERO, size)
+                    });
 
-            ui.painter().rect_filled(
-                Rect::from_min_size(Pos2::ZERO, viewport.size()),
-                0.0,
-                Color32::from_hex("#1e222f").unwrap_or_default(),
-            );
+                ui.painter().rect_filled(
+                    Rect::from_min_size(Pos2::ZERO, viewport.size()),
+                    0.0,
+                    Color32::from_hex("#1e222f").unwrap_or_default(),
+                );
 
-            visual::navbar::paint_navbar(ui, &viewport, &self.themes);
+                visual::navbar::paint_navbar(ui, &viewport, &self.themes);
 
-            ui.painter().text(
-                Rect::from_min_size(Pos2::ZERO, viewport.size()).center(),
-                Align2::CENTER_CENTER,
-                "In development",
-                FontId::new(32.0, FontFamily::Name("IBMPlexMono".into())),
-                self.themes.bg_text,
-            );
+                ui.painter().text(
+                    Rect::from_min_size(Pos2::ZERO, viewport.size()).center(),
+                    Align2::CENTER_CENTER,
+                    "In development",
+                    FontId::new(32.0, FontFamily::Name("IBMPlexMono".into())),
+                    self.themes.bg_text,
+                );
 
-            self.browser.paint(ctx, ui, &viewport, &self.themes);
-        });
+                self.browser.paint(ctx, ui, &viewport, &self.themes);
+            });
     }
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         // Clean up any resources

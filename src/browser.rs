@@ -1,13 +1,16 @@
+use itertools::Itertools;
+use std::iter::once;
 use std::thread::JoinHandle;
 use std::{cmp::Ordering, collections::BTreeSet, fs::File, path::PathBuf};
 use strum::Display;
 
 // FIXME: Temporary rodio playback, might need to use cpal or make rodio proper
-use rodio::{Decoder, OutputStream, Sink};
-use open::that_detached;
 use egui::{
-    include_image, pos2, vec2, Align2, Context, FontFamily, FontId, Image, PointerButton, Pos2, Rect, Stroke, Ui, LayerId
+    include_image, pos2, vec2, Align2, Context, FontFamily, FontId, Image, LayerId, PointerButton,
+    Pos2, Rect, Stroke, Ui,
 };
+use open::that_detached;
+use rodio::{Decoder, OutputStream, Sink};
 
 use std::io::BufReader;
 
@@ -54,13 +57,13 @@ impl PartialOrd for BrowserEntry {
 
 #[derive(Display, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BrowserEntryKind {
-    Directory,
+    Directory { expanded: bool },
     Audio,
     File,
 }
 
 pub struct Preview {
-    pub preview_thread: Option<JoinHandle<()>>
+    pub preview_thread: Option<JoinHandle<()>>,
 }
 
 impl Preview {
@@ -94,7 +97,7 @@ pub struct Browser {
     pub dragging_audio: bool,
     pub dragging_audio_text: String,
     pub sidebar_width: f32,
-    pub started_drag: bool
+    pub started_drag: bool,
 }
 
 impl Browser {
@@ -135,6 +138,7 @@ impl Browser {
         );
     }
 
+    #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
     pub fn paint(&mut self, ctx: &Context, ui: &mut Ui, viewport: &Rect, theme: &ThemeColors) {
         ui.painter().rect_filled(
             Rect {
@@ -149,7 +153,10 @@ impl Browser {
         );
         ui.painter().line_segment(
             [
-                Pos2 { x: self.sidebar_width, y: 50. },
+                Pos2 {
+                    x: self.sidebar_width,
+                    y: 50.,
+                },
                 Pos2 {
                     x: self.sidebar_width,
                     y: viewport.height(),
@@ -168,11 +175,14 @@ impl Browser {
         for (category, rect) in [
             (
                 BrowserCategory::Files,
-                Rect::from_min_size(pos2(0., 55.), vec2(self.sidebar_width/2., 30.)),
+                Rect::from_min_size(pos2(0., 55.), vec2(self.sidebar_width / 2., 30.)),
             ),
             (
                 BrowserCategory::Devices,
-                Rect::from_min_size(pos2(self.sidebar_width/2., 55.), vec2(self.sidebar_width/2., 30.)),
+                Rect::from_min_size(
+                    pos2(self.sidebar_width / 2., 55.),
+                    vec2(self.sidebar_width / 2., 30.),
+                ),
             ),
         ] {
             let open = self.selected_category == category;
@@ -198,30 +208,28 @@ impl Browser {
         match self.selected_category {
             BrowserCategory::Files => {
                 // Add ".." entry if not at root
-                let entries_ref = self.entries.iter().collect::<Vec<_>>();
-                let mut entries: Vec<BrowserEntry>;
-                if self.path != std::path::Path::new("/") {
-                    let b = BrowserEntry {
-                        path: self.path.parent().unwrap_or(&self.path).to_path_buf(),
-                        kind: BrowserEntryKind::Directory,
-                    };
-                    entries = vec![b.clone()];
-                    entries.extend(entries_ref.iter().map(|&e| e.clone()));
-                } else {
-                    entries = entries_ref.iter().map(|&e| e.clone()).collect();
-                }
+                let parent_entry = self.path.parent().map(|parent| BrowserEntry {
+                    path: parent.to_path_buf(),
+                    kind: BrowserEntryKind::Directory { expanded: false },
+                });
+                let entries = parent_entry.as_ref().into_iter().chain(self.entries.iter()).enumerate();
 
                 // Calculate the maximum offset based on the number of entries and browser height
-                let max_entries = entries.len();
+                let max_entries = self.entries.len() + usize::from(parent_entry.is_some());
                 let browser_height = viewport.height() - 90.0; // Adjust for header height
                 let bottom_margin = 8.0; // Add a slight margin at the bottom
-                let max_offset = (max_entries as f32 * 16.0) - browser_height + bottom_margin;
+                #[allow(clippy::cast_precision_loss)]
+                let max_offset =
+                    (max_entries as f32).mul_add(16.0, -browser_height) + bottom_margin;
 
                 // Clamp the offset
                 self.offset_y = self.offset_y.clamp(-max_offset.max(0.0), 0.0);
 
                 // Handle sidebar resizing
-                let resize_rect = Rect::from_min_size(pos2(self.sidebar_width - 5., 50.), vec2(10., viewport.height() - 50.));
+                let resize_rect = Rect::from_min_size(
+                    pos2(self.sidebar_width - 5., 50.),
+                    vec2(10., viewport.height() - 50.),
+                );
                 if ctx.rect_contains_pointer(LayerId::background(), resize_rect) {
                     ui.output_mut(|o| o.cursor_icon = egui::CursorIcon::ResizeHorizontal);
                     if ctx.input(|i| i.pointer.primary_pressed()) {
@@ -248,88 +256,132 @@ impl Browser {
                     }
                 }
 
-                for (index, entry) in entries.iter().enumerate() {
+                for (index, entry) in entries {
                     #[allow(clippy::cast_precision_loss)]
                     let y = (index as f32).mul_add(16.0, 90.);
-                    let rect = &Rect::from_min_size(pos2(0., y + self.offset_y), vec2(self.sidebar_width, 16.));
-                    egui::Frame::none()
-                        .show(ui, |ui| {
-                            ui.allocate_space(ui.available_size());
-                            let mut invalid = false;
-                            let name = if entry.path == self.path.parent().unwrap_or(&self.path) {
-                                ".."
-                            } else {
-                                entry.path.file_name().unwrap().to_str().unwrap_or_else(|| {
-                                    invalid = true;
-                                    "• Invalid Name •"
-                                })
-                            };
-                            let chars_to_truncate;
-                            if y + self.offset_y >= 90. {
-                                let text_width = ui.painter().layout_no_wrap(
+                    let rect = &Rect::from_min_size(
+                        pos2(0., y + self.offset_y),
+                        vec2(self.sidebar_width, 16.),
+                    );
+                    egui::Frame::none().show(ui, |ui| {
+                        ui.allocate_space(ui.available_size());
+                        let mut invalid = false;
+                        let name = if entry.path == self.path.parent().unwrap_or(&self.path) {
+                            ".."
+                        } else {
+                            entry.path.file_name().unwrap().to_str().unwrap_or_else(|| {
+                                invalid = true;
+                                "• Invalid Name •"
+                            })
+                        };
+                        let chars_to_truncate;
+                        if y + self.offset_y >= 90. {
+                            let text_width = ui
+                                .painter()
+                                .layout_no_wrap(
                                     name.to_string(),
                                     FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
                                     theme.browser_unselected_button_fg,
-                                ).rect.width();
-                                let char_width = ui.painter().layout_no_wrap(
+                                )
+                                .rect
+                                .width();
+                            let char_width = ui
+                                .painter()
+                                .layout_no_wrap(
                                     "a".to_string(),
                                     FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
                                     theme.browser_unselected_button_fg,
-                                ).rect.width();
-                                if invalid {
-                                    ui.painter().rect_filled(
-                                        Rect::from_min_size(pos2(30., y + self.offset_y), vec2(text_width, 16.)),
-                                        0.0,
-                                        theme.browser_invalid_name_bg,
-                                    );
-                                }
-                                chars_to_truncate = (self.sidebar_width / char_width) as usize - 10;
-                                ui.painter().text(
-                                    pos2(30., y + self.offset_y),
-                                    Align2::LEFT_TOP,
-                                    if name.to_string().unicode_truncate(chars_to_truncate).1 == chars_to_truncate {
-                                        name.to_string().unicode_truncate(chars_to_truncate).0.to_string() + "..."
-                                    } else {
-                                        name.to_string()
-                                    },
-                                    FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
-                                    if hovered(ctx, rect) {
-                                        if invalid {
-                                            theme.browser_unselected_hover_button_fg_invalid
-                                        } else {
-                                            theme.browser_unselected_hover_button_fg
-                                        }
-                                    } else {
-                                        if invalid {
-                                            theme.browser_unselected_button_fg_invalid
-                                        } else {
-                                            theme.browser_unselected_button_fg
-                                        }
-                                    },
                                 )
-                            } else {
-                                Rect {min: Pos2 { x: 0., y: 0. }, max: Pos2 { x: 0., y: 0. }}
+                                .rect
+                                .width();
+                            if invalid {
+                                ui.painter().rect_filled(
+                                    Rect::from_min_size(
+                                        pos2(30., y + self.offset_y),
+                                        vec2(text_width, 16.),
+                                    ),
+                                    0.0,
+                                    theme.browser_invalid_name_bg,
+                                );
                             }
-                        });
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            {
+                                chars_to_truncate = (self.sidebar_width / char_width) as usize - 10;
+                            }
+                            ui.painter().text(
+                                pos2(30., y + self.offset_y),
+                                Align2::LEFT_TOP,
+                                if name.to_string().unicode_truncate(chars_to_truncate).1
+                                    == chars_to_truncate
+                                {
+                                    name.to_string()
+                                        .unicode_truncate(chars_to_truncate)
+                                        .0
+                                        .to_string()
+                                        + "..."
+                                } else {
+                                    name.to_string()
+                                },
+                                FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
+                                if hovered(ctx, rect) {
+                                    if invalid {
+                                        theme.browser_unselected_hover_button_fg_invalid
+                                    } else {
+                                        theme.browser_unselected_hover_button_fg
+                                    }
+                                } else if invalid {
+                                    theme.browser_unselected_button_fg_invalid
+                                } else {
+                                    theme.browser_unselected_button_fg
+                                },
+                            )
+                        } else {
+                            Rect {
+                                min: Pos2 { x: 0., y: 0. },
+                                max: Pos2 { x: 0., y: 0. },
+                            }
+                        }
+                    });
 
                     if y + self.offset_y >= 90. {
                         Image::new(match entry.kind {
-                            BrowserEntryKind::Directory => include_image!("images/icons/folder.png"),
+                            BrowserEntryKind::Directory { expanded } => {
+                                include_image!("images/icons/folder.png")
+                            }
                             BrowserEntryKind::Audio => include_image!("images/icons/audio.png"),
                             BrowserEntryKind::File => include_image!("images/icons/file.png"),
                         })
-                        .paint_at(ui, Rect::from_min_size(pos2(10., y + 2. + self.offset_y), vec2(14., 14.)));
+                        .paint_at(
+                            ui,
+                            Rect::from_min_size(pos2(10., y + 2. + self.offset_y), vec2(14., 14.)),
+                        );
                     }
                     if entry.kind == BrowserEntryKind::Audio {
                         let is_dragging = ctx.input(|i| i.pointer.is_decidedly_dragging());
                         let cursor_pos = ctx.input(|i| i.pointer.hover_pos());
 
-                        if is_dragging && cursor_pos.is_some() && rect.contains(cursor_pos.unwrap()) && !self.dragging_audio && cursor_pos.unwrap().x <= self.sidebar_width-10. && !self.started_drag {
+                        if is_dragging
+                            && cursor_pos.is_some()
+                            && rect.contains(cursor_pos.unwrap())
+                            && !self.dragging_audio
+                            && cursor_pos.unwrap().x <= self.sidebar_width - 10.
+                            && !self.started_drag
+                        {
                             self.dragging_audio = true;
-                            self.dragging_audio_text = entry.path.file_name().unwrap().to_str().unwrap().to_string();
+                            self.dragging_audio_text = entry
+                                .path
+                                .file_name()
+                                .unwrap()
+                                .to_str()
+                                .unwrap()
+                                .to_string();
                         }
 
-                        if self.dragging_audio && cursor_pos.is_some() && self.dragging_audio_text == entry.path.file_name().unwrap().to_str().unwrap().to_string() {
+                        if self.dragging_audio
+                            && cursor_pos.is_some()
+                            && self.dragging_audio_text
+                                == *entry.path.file_name().unwrap().to_str().unwrap()
+                        {
                             ui.painter().text(
                                 cursor_pos.unwrap() + vec2(5.0, 2.0),
                                 Align2::CENTER_CENTER,
@@ -344,14 +396,18 @@ impl Browser {
                             self.dragging_audio_text = String::new();
                         }
                     }
-                    if press_position
-                        .is_some_and(|press_position| was_pressed && rect.contains(press_position) && press_position.x <= self.sidebar_width-10.)
-                        && press_position.unwrap().y >= 90. && !self.dragging_audio
+                    if press_position.is_some_and(|press_position| {
+                        was_pressed
+                            && rect.contains(press_position)
+                            && press_position.x <= self.sidebar_width - 10.
+                    }) && press_position.unwrap().y >= 90.
+                        && !self.dragging_audio
                     {
                         match entry.kind {
-                            BrowserEntryKind::Directory => {
+                            BrowserEntryKind::Directory { expanded } => {
                                 if entry.path == self.path.parent().unwrap_or(&self.path) {
-                                    self.path = self.path.parent().unwrap_or(&self.path).to_path_buf();
+                                    self.path =
+                                        self.path.parent().unwrap_or(&self.path).to_path_buf();
                                 } else {
                                     self.path.clone_from(&entry.path);
                                 }

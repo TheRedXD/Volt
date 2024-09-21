@@ -1,9 +1,7 @@
-use egui::{
-    include_image, pos2, vec2, Align2, Color32,
-    FontFamily, FontId, Image, Rect, Stroke, Ui,
-    RichText, Margin
-};
 use eframe::egui;
+use egui::{
+    include_image, pos2, Align2, Color32, FontFamily, FontId, Image, Margin, Rect, Stroke, Ui,
+};
 
 use crate::visual::ThemeColors;
 
