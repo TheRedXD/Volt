@@ -1,4 +1,12 @@
-use std::{cmp::Ordering, collections::BTreeSet, fs::File, path::PathBuf, thread::JoinHandle};
+use itertools::Itertools;
+use std::{
+    cmp::Ordering,
+    collections::HashSet,
+    fs::{read_dir, File},
+    io,
+    path::PathBuf,
+    thread::JoinHandle,
+};
 use strum::Display;
 
 // FIXME: Temporary rodio playback, might need to use cpal or make rodio proper
@@ -24,38 +32,39 @@ fn hovered(ctx: &Context, rect: &Rect) -> bool {
 }
 
 #[derive(Display, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BrowserCategory {
+pub enum Category {
     Files,
     Devices,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BrowserEntry {
+pub struct Entry {
     pub path: PathBuf,
-    pub kind: BrowserEntryKind,
+    pub kind: EntryKind,
 }
 
-impl Ord for BrowserEntry {
+impl Ord for Entry {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.kind.cmp(&other.kind).then(
-            self.path
-                .file_name()
-                .unwrap()
-                .cmp(other.path.file_name().unwrap()),
+        Ordering::then(
+            Ord::cmp(&self.kind, &other.kind),
+            Ord::cmp(
+                self.path.file_name().unwrap_or_default(),
+                other.path.file_name().unwrap_or_default(),
+            ),
         )
     }
 }
 
-impl PartialOrd for BrowserEntry {
+impl PartialOrd for Entry {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 #[derive(Display, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum BrowserEntryKind {
+pub enum EntryKind {
     UpOneLevel,
-    Directory { expanded: bool },
+    Directory,
     Audio,
     File,
 }
@@ -86,8 +95,8 @@ impl Preview {
 }
 
 pub struct Browser {
-    pub entries: BTreeSet<BrowserEntry>,
-    pub selected_category: BrowserCategory,
+    pub expanded_directories: HashSet<PathBuf>,
+    pub selected_category: Category,
     pub path: PathBuf,
     pub preview: Preview,
     pub offset_y: f32,
@@ -161,21 +170,24 @@ impl Browser {
             ],
             Stroke::new(0.5, theme.browser_outline),
         );
-        let (was_pressed, press_position) = ctx
+        let (was_pressed, was_double_clicked, press_position) = ctx
             .input(|input_state| {
                 Some((
                     input_state.pointer.button_released(PointerButton::Primary),
+                    input_state
+                        .pointer
+                        .button_double_clicked(PointerButton::Primary),
                     Some(input_state.pointer.latest_pos()?),
                 ))
             })
-            .unwrap_or((false, None));
+            .unwrap_or_default();
         for (category, rect) in [
             (
-                BrowserCategory::Files,
+                Category::Files,
                 Rect::from_min_size(pos2(0., 55.), vec2(self.sidebar_width / 2., 30.)),
             ),
             (
-                BrowserCategory::Devices,
+                Category::Devices,
                 Rect::from_min_size(
                     pos2(self.sidebar_width / 2., 55.),
                     vec2(self.sidebar_width / 2., 30.),
@@ -197,20 +209,44 @@ impl Browser {
             }
         }
         match self.selected_category {
-            BrowserCategory::Files => {
-                // Add ".." entry if not at root
-                let parent_entry = self.path.parent().map(|parent| BrowserEntry {
-                    path: parent.to_path_buf(),
-                    kind: BrowserEntryKind::UpOneLevel,
+            Category::Files => {
+                let entries = read_dir(&self.path).map_or(Vec::new(), |entries| {
+                    entries
+                        .map(|entry| -> io::Result<Entry> {
+                            let entry = entry?;
+                            Ok(Entry {
+                                path: entry.path(),
+                                kind: if entry.metadata()?.is_dir() {
+                                    EntryKind::Directory
+                                } else if [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
+                                    .into_iter()
+                                    .any(|extension| {
+                                        entry
+                                            .file_name()
+                                            .to_str()
+                                            .unwrap_or_default()
+                                            .ends_with(extension)
+                                    })
+                                {
+                                    EntryKind::Audio
+                                } else {
+                                    EntryKind::File
+                                },
+                            })
+                        })
+                        .try_collect()
+                        .unwrap_or_default()
                 });
-                let entries = parent_entry
-                    .as_ref()
-                    .into_iter()
-                    .chain(self.entries.iter())
-                    .enumerate();
+
+                // Add ".." entry if not at root
+                let parent_entry = self.path.parent().map(|parent| Entry {
+                    path: parent.to_path_buf(),
+                    kind: EntryKind::UpOneLevel,
+                });
+                let max_entries = entries.len() + usize::from(parent_entry.is_some());
+                let entries = parent_entry.into_iter().chain(entries).sorted_unstable();
 
                 // Calculate the maximum offset based on the number of entries and browser height
-                let max_entries = self.entries.len() + usize::from(parent_entry.is_some());
                 let browser_height = viewport.height() - 90.0; // Adjust for header height
                 let bottom_margin = 8.0; // Add a slight margin at the bottom
                 #[allow(clippy::cast_precision_loss)]
@@ -250,31 +286,31 @@ impl Browser {
                         );
                     }
                 }
+                let mut current_y = 90. + self.offset_y;
 
-                for (index, entry) in entries {
+                for entry in entries {
                     #[allow(clippy::cast_precision_loss)]
-                    let y = (index as f32).mul_add(16.0, 90.);
-                    let rect = &Rect::from_min_size(
-                        pos2(0., y + self.offset_y),
-                        vec2(self.sidebar_width, 16.),
-                    );
-                    egui::Frame::none().show(ui, |ui| {
-                        ui.allocate_space(ui.available_size());
-                        let mut invalid = false;
-                        let name = if entry.kind == BrowserEntryKind::UpOneLevel {
-                            "..".to_string()
-                        } else {
-                            let os_str = entry.path.file_name().unwrap();
-                            os_str.to_str().map_or_else(
-                                || {
-                                    invalid = true;
-                                    String::from_utf8_lossy(os_str.as_encoded_bytes()).to_string()
-                                },
-                                ToString::to_string,
-                            )
-                        };
-                        let chars_to_truncate;
-                        if y + self.offset_y >= 90. {
+                    let rect =
+                        &Rect::from_min_size(pos2(0., current_y), vec2(self.sidebar_width, 16.));
+                    if current_y >= 90. {
+                        egui::Frame::none().show(ui, |ui| {
+                            ui.allocate_space(ui.available_size());
+                            let mut invalid = false;
+                            let name = if entry.kind == EntryKind::UpOneLevel {
+                                "..".to_string()
+                            } else {
+                                entry.path.file_name().unwrap().to_str().map_or_else(
+                                    || {
+                                        invalid = true;
+                                        String::from_utf8_lossy(
+                                            entry.path.file_name().unwrap().as_encoded_bytes(),
+                                        )
+                                        .to_string()
+                                    },
+                                    ToString::to_string,
+                                )
+                            };
+                            let chars_to_truncate;
                             let text_width = ui
                                 .painter()
                                 .layout_no_wrap(
@@ -296,7 +332,7 @@ impl Browser {
                             if invalid {
                                 ui.painter().rect_filled(
                                     Rect::from_min_size(
-                                        pos2(30., y + self.offset_y),
+                                        pos2(30., current_y),
                                         vec2(text_width, 16.),
                                     ),
                                     0.0,
@@ -308,7 +344,7 @@ impl Browser {
                                 chars_to_truncate = (self.sidebar_width / char_width) as usize - 10;
                             }
                             ui.painter().text(
-                                pos2(30., y + self.offset_y),
+                                pos2(30., current_y),
                                 Align2::LEFT_TOP,
                                 if name.unicode_truncate(chars_to_truncate).1 == chars_to_truncate {
                                     name.unicode_truncate(chars_to_truncate).0.to_string() + "..."
@@ -316,50 +352,39 @@ impl Browser {
                                     name
                                 },
                                 FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
-                                if hovered(ctx, rect) {
-                                    if invalid {
+                                match (hovered(ctx, rect), invalid) {
+                                    (true, true) => {
                                         theme.browser_unselected_hover_button_fg_invalid
-                                    } else {
-                                        theme.browser_unselected_hover_button_fg
                                     }
-                                } else if invalid {
-                                    theme.browser_unselected_button_fg_invalid
-                                } else {
-                                    theme.browser_unselected_button_fg
+                                    (true, false) => theme.browser_unselected_hover_button_fg,
+                                    (false, true) => theme.browser_unselected_button_fg_invalid,
+                                    (false, false) => theme.browser_unselected_button_fg,
                                 },
                             )
-                        } else {
-                            Rect {
-                                min: Pos2 { x: 0., y: 0. },
-                                max: Pos2 { x: 0., y: 0. },
-                            }
-                        }
-                    });
+                        });
 
-                    if y + self.offset_y >= 90. {
                         if let Some(image) = match entry.kind {
-                            BrowserEntryKind::UpOneLevel => None,
-                            BrowserEntryKind::Directory { expanded: _ } => {
-                                Some(include_image!("images/icons/folder.png"))
-                                // TODO Add a folder open icon
+                            EntryKind::UpOneLevel => None,
+                            EntryKind::Directory => {
+                                if self.expanded_directories.contains(&entry.path) {
+                                    // TODO Add a folder open icon
+                                    None
+                                } else {
+                                    Some(include_image!("images/icons/folder.png"))
+                                }
                             }
-                            BrowserEntryKind::Audio => {
-                                Some(include_image!("images/icons/audio.png"))
-                            }
-                            BrowserEntryKind::File => Some(include_image!("images/icons/file.png")),
+                            EntryKind::Audio => Some(include_image!("images/icons/audio.png")),
+                            EntryKind::File => Some(include_image!("images/icons/file.png")),
                         }
                         .map(Image::new)
                         {
                             image.paint_at(
                                 ui,
-                                Rect::from_min_size(
-                                    pos2(10., y + 2. + self.offset_y),
-                                    vec2(14., 14.),
-                                ),
+                                Rect::from_min_size(pos2(10., current_y + 2.), vec2(14., 14.)),
                             );
                         }
                     }
-                    if entry.kind == BrowserEntryKind::Audio {
+                    if entry.kind == EntryKind::Audio {
                         let is_dragging = ctx.input(|i| i.pointer.is_decidedly_dragging());
                         let cursor_pos = ctx.input(|i| i.pointer.hover_pos());
 
@@ -401,32 +426,48 @@ impl Browser {
                         }
                     }
                     if press_position.is_some_and(|press_position| {
-                        was_pressed
-                            && rect.contains(press_position)
+                        rect.contains(press_position)
+                            && !self.dragging_audio
+                            // TODO make these two comparisons part of the `rect.contains` check
                             && press_position.x <= self.sidebar_width - 10.
-                    }) && press_position.unwrap().y >= 90.
-                        && !self.dragging_audio
-                    {
-                        match entry.kind {
-                            BrowserEntryKind::UpOneLevel
-                            | BrowserEntryKind::Directory { expanded: _ } => {
-                                self.path = entry.path.clone();
-                                // TODO Implement directory expansion
+                            && press_position.y >= 90.
+                    }) {
+                        let mut invert_expanded = || {
+                            if !self.expanded_directories.insert(entry.path.clone()) {
+                                self.expanded_directories.remove(&entry.path);
                             }
-                            BrowserEntryKind::Audio => {
-                                // TODO: Proper preview implementation with cpal. This is temporary (or at least make it work well with a proper preview widget)
-                                // Also, don't spawn a new thread - instead, dedicate a thread for preview
-                                let file = File::open(entry.path.as_path()).unwrap();
-                                self.preview.play_file(file);
+                        };
+                        match (was_pressed, was_double_clicked) {
+                            (_, true) => {
+                                if entry.kind == EntryKind::Directory {
+                                    self.path.clone_from(&entry.path);
+                                    invert_expanded();
+                                }
                             }
-                            BrowserEntryKind::File => {
-                                that_detached(entry.path.clone()).unwrap();
+                            (true, _) => {
+                                match entry.kind {
+                                    EntryKind::UpOneLevel => {
+                                        self.path.clone_from(&entry.path);
+                                    }
+                                    EntryKind::Directory => invert_expanded(),
+                                    EntryKind::Audio => {
+                                        // TODO: Proper preview implementation with cpal. This is temporary (or at least make it work well with a proper preview widget)
+                                        // Also, don't spawn a new thread - instead, dedicate a thread for preview
+                                        let file = File::open(entry.path.as_path()).unwrap();
+                                        self.preview.play_file(file);
+                                    }
+                                    EntryKind::File => {
+                                        that_detached(entry.path.clone()).unwrap();
+                                    }
+                                }
                             }
+                            _ => {}
                         }
                     }
+                    current_y += 16.;
                 }
             }
-            BrowserCategory::Devices => {
+            Category::Devices => {
                 // TODO: Show some devices here!
             }
         }

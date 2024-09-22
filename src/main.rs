@@ -4,7 +4,10 @@ use egui::{
     Rect,
 };
 use egui_extras::install_image_loaders;
-use std::{collections::BTreeSet, fs::read_dir};
+use std::{
+    collections::{BTreeSet, HashSet},
+    fs::read_dir,
+};
 mod blerp;
 mod test;
 // TODO: Move everything into components (visual)
@@ -12,7 +15,7 @@ mod browser;
 mod info;
 mod visual;
 
-use browser::{Browser, BrowserCategory, BrowserEntry, BrowserEntryKind};
+use browser::{Browser, Category, Entry, EntryKind};
 use visual::ThemeColors;
 
 fn main() -> eframe::Result {
@@ -57,8 +60,8 @@ impl VoltApp {
         cc.egui_ctx.set_fonts(fonts);
         Self {
             browser: Browser {
-                entries: BTreeSet::new(),
-                selected_category: BrowserCategory::Files,
+                expanded_directories: HashSet::new(),
+                selected_category: Category::Files,
                 path: "/".into(),
                 preview: browser::Preview {
                     preview_thread: Some(std::thread::spawn(|| {})),
@@ -76,42 +79,6 @@ impl VoltApp {
 
 impl App for VoltApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
-        'load: {
-            let Ok(entries) = read_dir(&self.browser.path) else {
-                break 'load;
-            };
-            self.browser.entries.clear();
-            for entry in entries {
-                let entry = entry.as_ref();
-                let path = entry.unwrap().path();
-                if entry.unwrap().metadata().unwrap().is_dir() {
-                    self.browser.entries.insert(BrowserEntry {
-                        path,
-                        kind: BrowserEntryKind::Directory { expanded: false },
-                    });
-                } else if [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
-                    .into_iter()
-                    .any(|extension| {
-                        entry
-                            .unwrap()
-                            .file_name()
-                            .to_str()
-                            .unwrap_or_default()
-                            .ends_with(extension)
-                    })
-                {
-                    self.browser.entries.insert(BrowserEntry {
-                        path,
-                        kind: BrowserEntryKind::Audio,
-                    });
-                } else {
-                    self.browser.entries.insert(BrowserEntry {
-                        path,
-                        kind: BrowserEntryKind::File,
-                    });
-                }
-            }
-        }
         CentralPanel::default()
             .frame(egui::Frame::none())
             .show(ctx, |ui| {
@@ -142,9 +109,6 @@ impl App for VoltApp {
             });
     }
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        // Clean up any resources
-        self.browser.entries.clear();
-
         // Log the exit
         println!("Volt is exiting!");
 
