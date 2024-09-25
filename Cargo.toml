@@ -3,8 +3,18 @@ name = "volt"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "volt"
+path = "src/bin/main.rs"
+
+[lib]
+name = "volt"
+path = "src/lib.rs"
+
 [dependencies]
-cpal = "0.15.3"
+bytes = "1.7.2"
+cpal = { version = "0.15.3", features = ["asio"] }
+dirs-next = "2.0.0"
 eframe = { version = "0.28.1", features = ["wgpu"] }
 egui = { version = "0.28.0", features = ["color-hex"] }
 egui_extras = { version = "0.28.1", features = ["all_loaders"] }
@@ -16,6 +26,7 @@ rodio = "0.19.0"
 rustfft = "6.2.0"
 serde = "1.0.210"
 strum = { version = "0.26.3", features = ["derive"] }
+thiserror = "1.0.64"
 unicode-truncate = "1.1.0"
 
 # Compile time and runtime optimizations
