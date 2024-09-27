@@ -4,7 +4,9 @@ use std::{
     collections::HashSet,
     fs::{read_dir, File},
     io,
-    path::PathBuf,
+    iter::{once, Iterator},
+    path::{Path, PathBuf},
+    str::FromStr,
     thread::JoinHandle,
 };
 use strum::Display;
@@ -41,6 +43,7 @@ pub enum Category {
 pub struct Entry {
     pub path: PathBuf,
     pub kind: EntryKind,
+    pub indent: usize,
 }
 
 impl Ord for Entry {
@@ -210,41 +213,58 @@ impl Browser {
         }
         match self.selected_category {
             Category::Files => {
-                let entries = read_dir(&self.path).map_or(Vec::new(), |entries| {
-                    entries
-                        .map(|entry| -> io::Result<Entry> {
-                            let entry = entry?;
-                            Ok(Entry {
-                                path: entry.path(),
-                                kind: if entry.metadata()?.is_dir() {
-                                    EntryKind::Directory
-                                } else if [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
-                                    .into_iter()
-                                    .any(|extension| {
-                                        entry
-                                            .file_name()
-                                            .to_str()
-                                            .unwrap_or_default()
-                                            .ends_with(extension)
-                                    })
+                let entries = {
+                    let mut stack = vec![(self.path.clone(), 0)];
+                    let mut discovered = HashSet::new();
+                    let mut entries = Vec::new();
+                    while let Some((path, indent)) = stack.pop() {
+                        entries.push((path.clone(), indent));
+                        if discovered.insert(path.clone()) {
+                            let Ok(entries) = read_dir(&path) else {
+                                continue;
+                            };
+                            for entry in entries {
+                                let entry = entry.unwrap();
+                                if self.expanded_directories.contains(
+                                    &PathBuf::from_str(&entry.file_name().into_string().unwrap())
+                                        .unwrap(),
+                                ) || self.expanded_directories.contains(&path)
                                 {
-                                    EntryKind::Audio
-                                } else {
-                                    EntryKind::File
-                                },
-                            })
-                        })
-                        .try_collect()
-                        .unwrap_or_default()
-                });
+                                    stack.push((entry.path(), indent + 1));
+                                }
+                            }
+                        }
+                    }
+                    entries.into_iter().map(|(path, indent)| Entry {
+                        kind: if path.is_file() {
+                            if path
+                                .extension()
+                                .and_then(|extension| extension.to_str())
+                                .is_some_and(|extension| {
+                                    [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
+                                        .contains(&extension)
+                                })
+                            {
+                                EntryKind::Audio
+                            } else {
+                                EntryKind::File
+                            }
+                        } else {
+                            EntryKind::Directory
+                        },
+                        path,
+                        indent,
+                    })
+                };
 
                 // Add ".." entry if not at root
                 let parent_entry = self.path.parent().map(|parent| Entry {
                     path: parent.to_path_buf(),
                     kind: EntryKind::UpOneLevel,
+                    indent: 0,
                 });
                 let max_entries = entries.len() + usize::from(parent_entry.is_some());
-                let entries = parent_entry.into_iter().chain(entries).sorted_unstable();
+                let entries = parent_entry.into_iter().chain(entries);
 
                 // Calculate the maximum offset based on the number of entries and browser height
                 let browser_height = viewport.height() - 90.0; // Adjust for header height
@@ -289,6 +309,9 @@ impl Browser {
                 let mut current_y = 90. + self.offset_y;
 
                 for entry in entries {
+                    const INDENT_SIZE: f32 = 20.0;
+                    #[allow(clippy::cast_precision_loss)]
+                    let x = INDENT_SIZE * entry.indent as f32;
                     #[allow(clippy::cast_precision_loss)]
                     let rect =
                         &Rect::from_min_size(pos2(0., current_y), vec2(self.sidebar_width, 16.));
@@ -299,16 +322,20 @@ impl Browser {
                             let name = if entry.kind == EntryKind::UpOneLevel {
                                 "..".to_string()
                             } else {
-                                entry.path.file_name().unwrap().to_str().map_or_else(
-                                    || {
-                                        invalid = true;
-                                        String::from_utf8_lossy(
-                                            entry.path.file_name().unwrap().as_encoded_bytes(),
-                                        )
-                                        .to_string()
-                                    },
-                                    ToString::to_string,
-                                )
+                                entry
+                                    .path
+                                    .file_name()
+                                    .map_or(entry.path.to_str(), |name| name.to_str())
+                                    .map_or_else(
+                                        || {
+                                            invalid = true;
+                                            String::from_utf8_lossy(
+                                                entry.path.file_name().unwrap().as_encoded_bytes(),
+                                            )
+                                            .to_string()
+                                        },
+                                        ToString::to_string,
+                                    )
                             };
                             let chars_to_truncate;
                             let text_width = ui
@@ -344,7 +371,7 @@ impl Browser {
                                 chars_to_truncate = (self.sidebar_width / char_width) as usize - 10;
                             }
                             ui.painter().text(
-                                pos2(30., current_y),
+                                pos2(30. + x, current_y),
                                 Align2::LEFT_TOP,
                                 if name.unicode_truncate(chars_to_truncate).1 == chars_to_truncate {
                                     name.unicode_truncate(chars_to_truncate).0.to_string() + "..."
@@ -380,7 +407,7 @@ impl Browser {
                         {
                             image.paint_at(
                                 ui,
-                                Rect::from_min_size(pos2(10., current_y + 2.), vec2(14., 14.)),
+                                Rect::from_min_size(pos2(10. + x, current_y + 2.), vec2(14., 14.)),
                             );
                         }
                     }
