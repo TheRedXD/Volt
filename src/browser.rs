@@ -3,9 +3,8 @@ use std::{
     cmp::Ordering,
     collections::HashSet,
     fs::{read_dir, File},
-    io,
-    iter::{once, Iterator},
-    path::{Path, PathBuf},
+    iter::Iterator,
+    path::PathBuf,
     str::FromStr,
     thread::JoinHandle,
 };
@@ -13,8 +12,8 @@ use strum::Display;
 
 // FIXME: Temporary rodio playback, might need to use cpal or make rodio proper
 use egui::{
-    include_image, pos2, vec2, Align2, Context, FontFamily, FontId, Image, LayerId, PointerButton,
-    Pos2, Rect, Stroke, Ui,
+    include_image, pos2, vec2, Align2, Context, DroppedFile, FontFamily, FontId, Image, LayerId,
+    PointerButton, Pos2, Rect, Stroke, Ui,
 };
 use open::that_detached;
 use rodio::{Decoder, OutputStream, Sink};
@@ -207,6 +206,26 @@ impl Browser {
         }
         match self.selected_category {
             Category::Files => {
+                // Handle folder drop
+                // TODO Enable drag and drop on Windows
+                // https://docs.rs/egui/latest/egui/struct.RawInput.html#structfield.dropped_files
+                let files: Vec<_> = ctx
+                    .input(|input| {
+                        input
+                            .raw
+                            .dropped_files
+                            .iter()
+                            .map(move |DroppedFile { path, .. }| path.clone().ok_or(()))
+                            .try_collect()
+                    })
+                    .unwrap_or_default();
+                for path in files {
+                    self.open_folders.push(OpenFolder {
+                        path,
+                        expanded_directories: HashSet::new(),
+                    });
+                }
+
                 let open_folders = self
                     .open_folders
                     .iter_mut()
@@ -265,7 +284,10 @@ impl Browser {
                     .collect_vec();
 
                 // Calculate the maximum offset based on the number of entries and browser height
-                let max_entries = open_folders.len();
+                let max_entries = open_folders
+                    .iter()
+                    .map(|(entries, _)| entries.len())
+                    .sum::<usize>();
                 let browser_height = viewport.height() - 90.0; // Adjust for header height
                 let bottom_margin = 8.0; // Add a slight margin at the bottom
                 #[allow(clippy::cast_precision_loss)]
@@ -305,6 +327,7 @@ impl Browser {
                         );
                     }
                 }
+
                 let mut current_y = 90. + self.offset_y;
                 for (entries, expanded_directories) in open_folders {
                     for entry in entries {
