@@ -7,6 +7,8 @@ use egui_extras::install_image_loaders;
 use std::{
     collections::{BTreeSet, HashSet},
     fs::read_dir,
+    path::PathBuf,
+    str::FromStr,
 };
 mod blerp;
 mod test;
@@ -15,7 +17,7 @@ mod browser;
 mod info;
 mod visual;
 
-use browser::{Browser, Category, Entry, EntryKind};
+use browser::{Browser, Category, Entry, EntryKind, OpenFolder};
 use visual::ThemeColors;
 
 fn main() -> eframe::Result {
@@ -60,9 +62,17 @@ impl VoltApp {
         cc.egui_ctx.set_fonts(fonts);
         Self {
             browser: Browser {
-                expanded_directories: HashSet::new(),
                 selected_category: Category::Files,
-                path: "/".into(),
+                open_folders: vec![
+                    OpenFolder {
+                        path: PathBuf::from_str("/").unwrap(),
+                        expanded_directories: HashSet::new(),
+                    },
+                    OpenFolder {
+                        path: PathBuf::from_str("/").unwrap(),
+                        expanded_directories: HashSet::new(),
+                    },
+                ],
                 preview: browser::Preview {
                     preview_thread: Some(std::thread::spawn(|| {})),
                 },

@@ -48,13 +48,7 @@ pub struct Entry {
 
 impl Ord for Entry {
     fn cmp(&self, other: &Self) -> Ordering {
-        Ordering::then(
-            Ord::cmp(&self.kind, &other.kind),
-            Ord::cmp(
-                self.path.file_name().unwrap_or_default(),
-                other.path.file_name().unwrap_or_default(),
-            ),
-        )
+        self.path.cmp(&other.path)
     }
 }
 
@@ -66,7 +60,6 @@ impl PartialOrd for Entry {
 
 #[derive(Display, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EntryKind {
-    UpOneLevel,
     Directory,
     Audio,
     File,
@@ -97,10 +90,14 @@ impl Preview {
     }
 }
 
-pub struct Browser {
-    pub expanded_directories: HashSet<PathBuf>,
-    pub selected_category: Category,
+pub struct OpenFolder {
     pub path: PathBuf,
+    pub expanded_directories: HashSet<PathBuf>,
+}
+
+pub struct Browser {
+    pub selected_category: Category,
+    pub open_folders: Vec<OpenFolder>,
     pub preview: Preview,
     pub offset_y: f32,
     pub dragging_audio: bool,
@@ -173,13 +170,10 @@ impl Browser {
             ],
             Stroke::new(0.5, theme.browser_outline),
         );
-        let (was_pressed, was_double_clicked, press_position) = ctx
+        let (was_pressed, press_position) = ctx
             .input(|input_state| {
                 Some((
                     input_state.pointer.button_released(PointerButton::Primary),
-                    input_state
-                        .pointer
-                        .button_double_clicked(PointerButton::Primary),
                     Some(input_state.pointer.latest_pos()?),
                 ))
             })
@@ -213,60 +207,65 @@ impl Browser {
         }
         match self.selected_category {
             Category::Files => {
-                let entries = {
-                    let mut stack = vec![(self.path.clone(), 0)];
-                    let mut discovered = HashSet::new();
-                    let mut entries = Vec::new();
-                    while let Some((path, indent)) = stack.pop() {
-                        entries.push((path.clone(), indent));
-                        if discovered.insert(path.clone()) {
-                            let Ok(entries) = read_dir(&path) else {
-                                continue;
-                            };
-                            for entry in entries {
-                                let entry = entry.unwrap();
-                                if self.expanded_directories.contains(
-                                    &PathBuf::from_str(&entry.file_name().into_string().unwrap())
+                let open_folders = self
+                    .open_folders
+                    .iter_mut()
+                    .map(|open_folder| {
+                        let mut stack = vec![(open_folder.path.clone(), 0)];
+                        let mut discovered = HashSet::new();
+                        let mut entries = Vec::new();
+                        while let Some((path, indent)) = stack.pop() {
+                            entries.push((path.clone(), indent));
+                            if discovered.insert(path.clone()) {
+                                let Ok(entries) = read_dir(&path) else {
+                                    continue;
+                                };
+                                for entry in entries {
+                                    let entry = entry.unwrap();
+                                    if open_folder.expanded_directories.contains(
+                                        &PathBuf::from_str(
+                                            &entry.file_name().into_string().unwrap(),
+                                        )
                                         .unwrap(),
-                                ) || self.expanded_directories.contains(&path)
-                                {
-                                    stack.push((entry.path(), indent + 1));
+                                    ) || open_folder.expanded_directories.contains(&path)
+                                    {
+                                        stack.push((entry.path(), indent + 1));
+                                    }
                                 }
                             }
                         }
-                    }
-                    entries.into_iter().map(|(path, indent)| Entry {
-                        kind: if path.is_file() {
-                            if path
-                                .extension()
-                                .and_then(|extension| extension.to_str())
-                                .is_some_and(|extension| {
-                                    [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
-                                        .contains(&extension)
+                        (
+                            entries
+                                .into_iter()
+                                .map(|(path, indent)| Entry {
+                                    kind: if path.is_file() {
+                                        if path
+                                            .extension()
+                                            .and_then(|extension| extension.to_str())
+                                            .is_some_and(|extension| {
+                                                [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
+                                                    .contains(&extension)
+                                            })
+                                        {
+                                            EntryKind::Audio
+                                        } else {
+                                            EntryKind::File
+                                        }
+                                    } else {
+                                        EntryKind::Directory
+                                    },
+                                    path,
+                                    indent,
                                 })
-                            {
-                                EntryKind::Audio
-                            } else {
-                                EntryKind::File
-                            }
-                        } else {
-                            EntryKind::Directory
-                        },
-                        path,
-                        indent,
+                                .sorted_unstable()
+                                .collect_vec(),
+                            &mut open_folder.expanded_directories,
+                        )
                     })
-                };
-
-                // Add ".." entry if not at root
-                let parent_entry = self.path.parent().map(|parent| Entry {
-                    path: parent.to_path_buf(),
-                    kind: EntryKind::UpOneLevel,
-                    indent: 0,
-                });
-                let max_entries = entries.len() + usize::from(parent_entry.is_some());
-                let entries = parent_entry.into_iter().chain(entries);
+                    .collect_vec();
 
                 // Calculate the maximum offset based on the number of entries and browser height
+                let max_entries = open_folders.len();
                 let browser_height = viewport.height() - 90.0; // Adjust for header height
                 let bottom_margin = 8.0; // Add a slight margin at the bottom
                 #[allow(clippy::cast_precision_loss)]
@@ -307,22 +306,21 @@ impl Browser {
                     }
                 }
                 let mut current_y = 90. + self.offset_y;
-
-                for entry in entries {
-                    const INDENT_SIZE: f32 = 20.0;
-                    #[allow(clippy::cast_precision_loss)]
-                    let x = INDENT_SIZE * entry.indent as f32;
-                    #[allow(clippy::cast_precision_loss)]
-                    let rect =
-                        &Rect::from_min_size(pos2(0., current_y), vec2(self.sidebar_width, 16.));
-                    if current_y >= 90. {
-                        egui::Frame::none().show(ui, |ui| {
-                            ui.allocate_space(ui.available_size());
-                            let mut invalid = false;
-                            let name = if entry.kind == EntryKind::UpOneLevel {
-                                "..".to_string()
-                            } else {
-                                entry
+                for (entries, expanded_directories) in open_folders {
+                    for entry in entries {
+                        const INDENT_SIZE: f32 = 20.0;
+                        #[allow(clippy::cast_precision_loss)]
+                        let x = INDENT_SIZE * entry.indent as f32;
+                        #[allow(clippy::cast_precision_loss)]
+                        let rect = &Rect::from_min_size(
+                            pos2(0., current_y),
+                            vec2(self.sidebar_width, 16.),
+                        );
+                        if current_y >= 90. {
+                            egui::Frame::none().show(ui, |ui| {
+                                ui.allocate_space(ui.available_size());
+                                let mut invalid = false;
+                                let name = entry
                                     .path
                                     .file_name()
                                     .map_or(entry.path.to_str(), |name| name.to_str())
@@ -335,163 +333,148 @@ impl Browser {
                                             .to_string()
                                         },
                                         ToString::to_string,
+                                    );
+                                let chars_to_truncate;
+                                let text_width = ui
+                                    .painter()
+                                    .layout_no_wrap(
+                                        name.clone(),
+                                        FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
+                                        theme.browser_unselected_button_fg,
                                     )
-                            };
-                            let chars_to_truncate;
-                            let text_width = ui
-                                .painter()
-                                .layout_no_wrap(
-                                    name.clone(),
-                                    FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
-                                    theme.browser_unselected_button_fg,
-                                )
-                                .rect
-                                .width();
-                            let char_width = ui
-                                .painter()
-                                .layout_no_wrap(
-                                    "a".to_string(),
-                                    FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
-                                    theme.browser_unselected_button_fg,
-                                )
-                                .rect
-                                .width();
-                            if invalid {
-                                ui.painter().rect_filled(
-                                    Rect::from_min_size(
-                                        pos2(30., current_y),
-                                        vec2(text_width, 16.),
-                                    ),
-                                    0.0,
-                                    theme.browser_invalid_name_bg,
-                                );
-                            }
-                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-                            {
-                                chars_to_truncate = (self.sidebar_width / char_width) as usize - 10;
-                            }
-                            ui.painter().text(
-                                pos2(30. + x, current_y),
-                                Align2::LEFT_TOP,
-                                if name.unicode_truncate(chars_to_truncate).1 == chars_to_truncate {
-                                    name.unicode_truncate(chars_to_truncate).0.to_string() + "..."
-                                } else {
-                                    name
-                                },
-                                FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
-                                match (hovered(ctx, rect), invalid) {
-                                    (true, true) => {
-                                        theme.browser_unselected_hover_button_fg_invalid
-                                    }
-                                    (true, false) => theme.browser_unselected_hover_button_fg,
-                                    (false, true) => theme.browser_unselected_button_fg_invalid,
-                                    (false, false) => theme.browser_unselected_button_fg,
-                                },
-                            )
-                        });
-
-                        if let Some(image) = match entry.kind {
-                            EntryKind::UpOneLevel => None,
-                            EntryKind::Directory => {
-                                if self.expanded_directories.contains(&entry.path) {
-                                    // TODO Add a folder open icon
-                                    None
-                                } else {
-                                    Some(include_image!("images/icons/folder.png"))
+                                    .rect
+                                    .width();
+                                let char_width = ui
+                                    .painter()
+                                    .layout_no_wrap(
+                                        "a".to_string(),
+                                        FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
+                                        theme.browser_unselected_button_fg,
+                                    )
+                                    .rect
+                                    .width();
+                                if invalid {
+                                    ui.painter().rect_filled(
+                                        Rect::from_min_size(
+                                            pos2(30., current_y),
+                                            vec2(text_width, 16.),
+                                        ),
+                                        0.0,
+                                        theme.browser_invalid_name_bg,
+                                    );
                                 }
-                            }
-                            EntryKind::Audio => Some(include_image!("images/icons/audio.png")),
-                            EntryKind::File => Some(include_image!("images/icons/file.png")),
-                        }
-                        .map(Image::new)
-                        {
-                            image.paint_at(
+                                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                                {
+                                    chars_to_truncate =
+                                        ((self.sidebar_width - x) / char_width) as usize - 10;
+                                }
+                                ui.painter().text(
+                                    pos2(30. + x, current_y),
+                                    Align2::LEFT_TOP,
+                                    if name.unicode_truncate(chars_to_truncate).1
+                                        == chars_to_truncate
+                                    {
+                                        name.unicode_truncate(chars_to_truncate).0.to_string()
+                                            + "..."
+                                    } else {
+                                        name
+                                    },
+                                    FontId::new(14., FontFamily::Name("IBMPlexMono".into())),
+                                    match (hovered(ctx, rect), invalid) {
+                                        (true, true) => {
+                                            theme.browser_unselected_hover_button_fg_invalid
+                                        }
+                                        (true, false) => theme.browser_unselected_hover_button_fg,
+                                        (false, true) => theme.browser_unselected_button_fg_invalid,
+                                        (false, false) => theme.browser_unselected_button_fg,
+                                    },
+                                )
+                            });
+
+                            Image::new(match entry.kind {
+                                EntryKind::Directory => {
+                                    if expanded_directories.contains(&entry.path) {
+                                        include_image!("images/icons/folder_open.png")
+                                    } else {
+                                        include_image!("images/icons/folder.png")
+                                    }
+                                }
+                                EntryKind::Audio => include_image!("images/icons/audio.png"),
+                                EntryKind::File => include_image!("images/icons/file.png"),
+                            })
+                            .paint_at(
                                 ui,
                                 Rect::from_min_size(pos2(10. + x, current_y + 2.), vec2(14., 14.)),
                             );
                         }
-                    }
-                    if entry.kind == EntryKind::Audio {
-                        let is_dragging = ctx.input(|i| i.pointer.is_decidedly_dragging());
-                        let cursor_pos = ctx.input(|i| i.pointer.hover_pos());
+                        if entry.kind == EntryKind::Audio {
+                            let is_dragging = ctx.input(|i| i.pointer.is_decidedly_dragging());
+                            let cursor_pos = ctx.input(|i| i.pointer.hover_pos());
 
-                        if is_dragging
-                            && cursor_pos.is_some()
-                            && rect.contains(cursor_pos.unwrap())
-                            && !self.dragging_audio
-                            && cursor_pos.unwrap().x <= self.sidebar_width - 10.
-                            && !self.started_drag
-                        {
-                            self.dragging_audio = true;
-                            self.dragging_audio_text = entry
-                                .path
-                                .file_name()
-                                .unwrap()
-                                .to_str()
-                                .unwrap()
-                                .to_string();
-                        }
-
-                        if let Some(cursor_pos) = cursor_pos {
-                            if self.dragging_audio
-                                && self.dragging_audio_text
-                                    == *entry.path.file_name().unwrap().to_str().unwrap()
+                            if is_dragging
+                                && cursor_pos.is_some()
+                                && rect.contains(cursor_pos.unwrap())
+                                && !self.dragging_audio
+                                && cursor_pos.unwrap().x <= self.sidebar_width - 10.
+                                && !self.started_drag
                             {
-                                ui.painter().text(
-                                    cursor_pos + vec2(5.0, 2.0),
-                                    Align2::CENTER_CENTER,
-                                    &self.dragging_audio_text,
-                                    FontId::new(14.0, FontFamily::Name("IBMPlexMono".into())),
-                                    theme.browser_selected_button_fg,
-                                );
+                                self.dragging_audio = true;
+                                self.dragging_audio_text = entry
+                                    .path
+                                    .file_name()
+                                    .unwrap()
+                                    .to_str()
+                                    .unwrap()
+                                    .to_string();
+                            }
+
+                            if let Some(cursor_pos) = cursor_pos {
+                                if self.dragging_audio
+                                    && self.dragging_audio_text
+                                        == *entry.path.file_name().unwrap().to_str().unwrap()
+                                {
+                                    ui.painter().text(
+                                        cursor_pos + vec2(5.0, 2.0),
+                                        Align2::CENTER_CENTER,
+                                        &self.dragging_audio_text,
+                                        FontId::new(14.0, FontFamily::Name("IBMPlexMono".into())),
+                                        theme.browser_selected_button_fg,
+                                    );
+                                }
+                            }
+
+                            if !is_dragging {
+                                self.dragging_audio = false;
+                                self.dragging_audio_text = String::new();
                             }
                         }
-
-                        if !is_dragging {
-                            self.dragging_audio = false;
-                            self.dragging_audio_text = String::new();
-                        }
-                    }
-                    if press_position.is_some_and(|press_position| {
-                        rect.contains(press_position)
+                        if press_position.is_some_and(|press_position| {
+                            rect.contains(press_position)
                             && !self.dragging_audio
                             // TODO make these two comparisons part of the `rect.contains` check
                             && press_position.x <= self.sidebar_width - 10.
                             && press_position.y >= 90.
-                    }) {
-                        let mut invert_expanded = || {
-                            if !self.expanded_directories.insert(entry.path.clone()) {
-                                self.expanded_directories.remove(&entry.path);
-                            }
-                        };
-                        match (was_pressed, was_double_clicked) {
-                            (_, true) => {
-                                if entry.kind == EntryKind::Directory {
-                                    self.path.clone_from(&entry.path);
-                                    invert_expanded();
-                                }
-                            }
-                            (true, _) => {
-                                match entry.kind {
-                                    EntryKind::UpOneLevel => {
-                                        self.path.clone_from(&entry.path);
-                                    }
-                                    EntryKind::Directory => invert_expanded(),
-                                    EntryKind::Audio => {
-                                        // TODO: Proper preview implementation with cpal. This is temporary (or at least make it work well with a proper preview widget)
-                                        // Also, don't spawn a new thread - instead, dedicate a thread for preview
-                                        let file = File::open(entry.path.as_path()).unwrap();
-                                        self.preview.play_file(file);
-                                    }
-                                    EntryKind::File => {
-                                        that_detached(entry.path.clone()).unwrap();
+                        }) && was_pressed
+                        {
+                            match entry.kind {
+                                EntryKind::Directory => {
+                                    if !expanded_directories.insert(entry.path.clone()) {
+                                        expanded_directories.remove(&entry.path);
                                     }
                                 }
+                                EntryKind::Audio => {
+                                    // TODO: Proper preview implementation with cpal. This is temporary (or at least make it work well with a proper preview widget)
+                                    // Also, don't spawn a new thread - instead, dedicate a thread for preview
+                                    let file = File::open(entry.path.as_path()).unwrap();
+                                    self.preview.play_file(file);
+                                }
+                                EntryKind::File => {
+                                    that_detached(entry.path.clone()).unwrap();
+                                }
                             }
-                            _ => {}
                         }
+                        current_y += 16.;
                     }
-                    current_y += 16.;
                 }
             }
             Category::Devices => {
