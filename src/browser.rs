@@ -45,9 +45,21 @@ pub struct Entry {
     pub indent: usize,
 }
 
+// FIXME: THIS NEEDS TO BE FIXED ASAP, the ordering is wrong
+// Because of the new browser tree layout, the ordering no longer works as expected
+// We either need to do these comparisons within each layer of the tree, or make a more complicated ordering algorithm,
+// which would generally avoid the problem of this stuff being put into the wrong layer.
+// For now, ordering is based on path.
 impl Ord for Entry {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.path.cmp(&other.path)
+        match (self.kind, other.kind) {
+            // (EntryKind::Directory, EntryKind::Directory) => self.path.cmp(&other.path),
+            // (EntryKind::Directory, _) => std::cmp::Ordering::Less,
+            // (_, EntryKind::Directory) => std::cmp::Ordering::Greater,
+            // (EntryKind::Audio, EntryKind::File) => std::cmp::Ordering::Less,
+            // (EntryKind::File, EntryKind::Audio) => std::cmp::Ordering::Greater,
+            _ => self.path.cmp(&other.path)
+        }
     }
 }
 
@@ -192,8 +204,9 @@ impl Browser {
         ] {
             let open = self.selected_category == category;
             Self::paint_button(ctx, ui, &rect, open, category.to_string().as_str(), theme);
-            if press_position
-                .is_some_and(|press_position| was_pressed && rect.contains(press_position))
+            if press_position.is_some_and(|press_position|
+                was_pressed && rect.contains(press_position)
+            )
             {
                 self.selected_category = category;
             }
@@ -207,18 +220,15 @@ impl Browser {
         match self.selected_category {
             Category::Files => {
                 // Handle folder drop
-                // TODO Enable drag and drop on Windows
+                // TODO: Enable drag and drop on Windows
                 // https://docs.rs/egui/latest/egui/struct.RawInput.html#structfield.dropped_files
                 let files: Vec<_> = ctx
                     .input(|input| {
-                        input
-                            .raw
-                            .dropped_files
+                        input.raw.dropped_files
                             .iter()
                             .map(move |DroppedFile { path, .. }| path.clone().ok_or(()))
                             .try_collect()
-                    })
-                    .unwrap_or_default();
+                    }).unwrap_or_default();
                 for path in files {
                     self.open_folders.push(OpenFolder {
                         path,
@@ -226,8 +236,9 @@ impl Browser {
                     });
                 }
 
-                let open_folders = self
-                    .open_folders
+                let allowed_audio_formats = [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"];
+
+                let open_folders = self.open_folders
                     .iter_mut()
                     .map(|open_folder| {
                         let mut stack = vec![(open_folder.path.clone(), 0)];
@@ -243,9 +254,11 @@ impl Browser {
                                     let entry = entry.unwrap();
                                     if open_folder.expanded_directories.contains(
                                         &PathBuf::from_str(
-                                            &entry.file_name().into_string().unwrap(),
-                                        )
-                                        .unwrap(),
+                                            &entry
+                                                .file_name()
+                                                .into_string()
+                                                .unwrap_or_else(|_| "• Invalid Name •".into()),
+                                        ).unwrap(),
                                     ) || open_folder.expanded_directories.contains(&path)
                                     {
                                         stack.push((entry.path(), indent + 1));
@@ -254,17 +267,12 @@ impl Browser {
                             }
                         }
                         (
-                            entries
-                                .into_iter()
+                            entries.into_iter()
                                 .map(|(path, indent)| Entry {
                                     kind: if path.is_file() {
-                                        if path
-                                            .extension()
+                                        if path.extension()
                                             .and_then(|extension| extension.to_str())
-                                            .is_some_and(|extension| {
-                                                [".wav", ".wave", ".mp3", ".ogg", ".flac", ".opus"]
-                                                    .contains(&extension)
-                                            })
+                                            .is_some_and(|extension| allowed_audio_formats.contains(&extension))
                                         {
                                             EntryKind::Audio
                                         } else {
@@ -291,8 +299,7 @@ impl Browser {
                 let browser_height = viewport.height() - 90.0; // Adjust for header height
                 let bottom_margin = 8.0; // Add a slight margin at the bottom
                 #[allow(clippy::cast_precision_loss)]
-                let max_offset =
-                    (max_entries as f32).mul_add(16.0, -browser_height) + bottom_margin;
+                let max_offset = (max_entries as f32).mul_add(16.0, -browser_height) + bottom_margin;
 
                 // Clamp the offset
                 self.offset_y = self.offset_y.clamp(-max_offset.max(0.0), 0.0);
@@ -309,8 +316,9 @@ impl Browser {
                     }
                 }
                 if self.started_drag {
+                    ui.output_mut(|output| output.cursor_icon = egui::CursorIcon::ResizeHorizontal);
                     if let Some(mouse_pos) = ctx.pointer_hover_pos() {
-                        self.sidebar_width = mouse_pos.x.clamp(100.0, viewport.width() / 2.0);
+                        self.sidebar_width = mouse_pos.x.clamp(100.0, viewport.width());
                     }
                     if ctx.input(|i| i.pointer.primary_released()) {
                         self.started_drag = false;
@@ -388,17 +396,13 @@ impl Browser {
                                 }
                                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                                 {
-                                    chars_to_truncate =
-                                        ((self.sidebar_width - x) / char_width) as usize - 10;
+                                    chars_to_truncate = (((self.sidebar_width - x) / char_width) - 10.) as usize;
                                 }
                                 ui.painter().text(
                                     pos2(30. + x, current_y),
                                     Align2::LEFT_TOP,
-                                    if name.unicode_truncate(chars_to_truncate).1
-                                        == chars_to_truncate
-                                    {
-                                        name.unicode_truncate(chars_to_truncate).0.to_string()
-                                            + "..."
+                                    if name.unicode_truncate(chars_to_truncate).1 == chars_to_truncate {
+                                        name.unicode_truncate(chars_to_truncate).0.to_string() + "..."
                                     } else {
                                         name
                                     },
@@ -425,10 +429,10 @@ impl Browser {
                                 EntryKind::Audio => include_image!("images/icons/audio.png"),
                                 EntryKind::File => include_image!("images/icons/file.png"),
                             })
-                            .paint_at(
-                                ui,
-                                Rect::from_min_size(pos2(10. + x, current_y + 2.), vec2(14., 14.)),
-                            );
+                            .paint_at(ui, Rect::from_min_size(
+                                pos2(10. + x, current_y + 2.),
+                                vec2(14., 14.)
+                            ));
                         }
                         if entry.kind == EntryKind::Audio {
                             let is_dragging = ctx.input(|i| i.pointer.is_decidedly_dragging());
@@ -453,8 +457,7 @@ impl Browser {
 
                             if let Some(cursor_pos) = cursor_pos {
                                 if self.dragging_audio
-                                    && self.dragging_audio_text
-                                        == *entry.path.file_name().unwrap().to_str().unwrap()
+                                    && self.dragging_audio_text == *entry.path.file_name().unwrap().to_str().unwrap()
                                 {
                                     ui.painter().text(
                                         cursor_pos + vec2(5.0, 2.0),
@@ -474,7 +477,7 @@ impl Browser {
                         if press_position.is_some_and(|press_position| {
                             rect.contains(press_position)
                             && !self.dragging_audio
-                            // TODO make these two comparisons part of the `rect.contains` check
+                            // TODO: make these two comparisons part of the `rect.contains` check
                             && press_position.x <= self.sidebar_width - 10.
                             && press_position.y >= 90.
                         }) && was_pressed

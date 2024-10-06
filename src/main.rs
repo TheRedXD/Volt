@@ -20,16 +20,20 @@ use browser::{Browser, Category, OpenFolder};
 use visual::ThemeColors;
 
 fn main() -> eframe::Result {
-    if std::env::args().any(|x| x == *"--info") {
-        info::dump();
-    }
+    info::handle();
+
     // Panic handling
     std::panic::set_hook(Box::new(|panic_info| {
         info::panic_handler(panic_info);
     }));
+
     let title = "Volt";
     let native_options = NativeOptions {
         vsync: true,
+        wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
+            present_mode: eframe::wgpu::PresentMode::Immediate,
+            ..Default::default()
+        },
         ..Default::default()
     };
     run_native(
@@ -92,21 +96,9 @@ impl App for VoltApp {
                         Rect::from_min_size(Pos2::ZERO, size)
                     });
 
-                ui.painter().rect_filled(
-                    Rect::from_min_size(Pos2::ZERO, viewport.size()),
-                    0.0,
-                    Color32::from_hex("#1e222f").unwrap_or_default(),
-                );
+                visual::background::paint_background(ui, &viewport, &self.themes);
 
                 visual::navbar::paint_navbar(ui, &viewport, &self.themes);
-
-                ui.painter().text(
-                    Rect::from_min_size(Pos2::ZERO, viewport.size()).center(),
-                    Align2::CENTER_CENTER,
-                    "In development",
-                    FontId::new(32.0, FontFamily::Name("IBMPlexMono".into())),
-                    self.themes.bg_text,
-                );
 
                 self.browser.paint(ctx, ui, &viewport, &self.themes);
             });

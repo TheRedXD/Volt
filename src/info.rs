@@ -118,7 +118,7 @@ fn get_gpu_info() -> String {
     "Unknown GPU".to_string()
 }
 pub fn dump() {
-    let distro: String = "None".into();
+    let mut distro: String = "None".into();
     #[cfg(target_os = "linux")]
     {
         if let Ok(release_file) = std::fs::read_to_string("/etc/os-release") {
@@ -144,7 +144,18 @@ pub fn dump() {
     println!("Version: {}", env!("CARGO_PKG_VERSION"));
 }
 
-// TODO could use the `human_panic` crate
+pub fn handle() {
+    if std::env::args().any(|x| x == *"--info") {
+        dump();
+        std::process::exit(0);
+    }
+    if std::env::args().any(|x| x == *"--verbose") {
+        println!("Running Volt in verbose mode! Various debug logs will now get logged. For convenience, a debug.log file is also being written to.");
+    }
+}
+
+// TODO: could use the `human_panic` crate
+// For future reference: https://crates.io/crates/human-panic
 pub fn panic_handler(panic_info: &PanicHookInfo<'_>) {
     if let Some(location) = panic_info.location() {
         println!(
