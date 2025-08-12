@@ -2,6 +2,15 @@
 members = ["crates/blerp", "crates/volt"]
 resolver = "2"
 
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88.0"
+
+[workspace.dependencies]
+cpal = "0.15.3"
+itertools = "0.14.0"
+
 # Compile time and runtime optimizations
 [profile.dev]
 opt-level = 1

@@ -1,11 +1,7 @@
-use std::sync::{Mutex, Arc};
-use lazy_static::lazy_static;
+use std::sync::{Arc, LazyLock, Mutex};
 
 pub fn now_ns() -> f64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as f64
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as f64
 }
 
 pub fn ns_to_ms(ns: f64) -> f64 {
@@ -20,13 +16,13 @@ macro_rules! generate_timings {
             )*
         }
 
-        lazy_static! {
-            static ref SHARED_TIMINGS: Arc<Mutex<SharedTimings>> = Arc::new(Mutex::new(SharedTimings {
+        static SHARED_TIMINGS: LazyLock<Arc<Mutex<SharedTimings>>> =
+            LazyLock::new(|| Arc::new(Mutex::new(SharedTimings {
                 $(
-                    $name: 0.0,
+                $name: 0.0,
                 )*
-            }));
-        }
+            }
+        )));
 
         $(
             paste::item! {
@@ -57,6 +53,5 @@ macro_rules! generate_timings {
     };
 }
 
-generate_timings!(
-    render
-);
+generate_timings!(render);
+

@@ -4513,7 +4513,6 @@ dependencies = [
  "human-panic",
  "image",
  "itertools 0.14.0",
- "lazy_static",
  "notify",
  "open",
  "paste",
