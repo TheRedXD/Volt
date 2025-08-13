@@ -7,7 +7,7 @@ pub fn sine_wave(frequency: f64, amplitude: f64) -> impl FnMut(f64) -> f64
 where
     f64: FromSample<f64>,
 {
-    move |time| (amplitude * (TAU * frequency * time).sin())
+    move |time| amplitude * (TAU * frequency * time).sin()
 }
 
 /// Given a `frequency` in hertz and an `amplitude`, return a function over time (in seconds) that generates a square wave.
@@ -26,7 +26,7 @@ pub fn triangle_wave(frequency: f64, amplitude: f64) -> impl FnMut(f64) -> f64
 where
     f64: FromSample<f64>,
 {
-    move |time| ((2. * amplitude) * time.mul_add(frequency, -time.mul_add(frequency, 1. / 2.).floor()).abs())
+    move |time| (2. * amplitude) * time.mul_add(frequency, -time.mul_add(frequency, 1. / 2.).floor()).abs()
 }
 
 /// Given a `frequency` in hertz and an `amplitude`, return a function over time (in seconds) that generates a sawtooth wave.
@@ -34,7 +34,7 @@ pub fn sawtooth_wave(frequency: f64, amplitude: f64) -> impl FnMut(f64) -> f64
 where
     f64: FromSample<f64>,
 {
-    move |time| ((2. * amplitude) * time.mul_add(frequency, -time.mul_add(frequency, 1. / 2.).floor()))
+    move |time| (2. * amplitude) * time.mul_add(frequency, -time.mul_add(frequency, 1. / 2.).floor())
 }
 
 /// Return a function that generates silence.

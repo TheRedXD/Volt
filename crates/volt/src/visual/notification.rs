@@ -1,32 +1,26 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use egui::Color32;
-
-use crate::timings::now_ns;
+use egui::{Color32, hex_color};
 
 #[derive(Debug, Clone)]
 pub struct Notification {
     pub message: String,
     pub duration: Option<Duration>,
-    pub add_time: Duration
+    pub added: Instant,
 }
 
 impl Notification {
     pub fn new(message: String, duration: Option<Duration>) -> Self {
-        let add_time = Duration::from_nanos(now_ns() as u64);
-        Notification {
-            message,
-            duration,
-            add_time
-        }
+        let add_time = Instant::now();
+        Self { message, duration, added: add_time }
     }
 
     pub fn with_duration(message: String, duration: Duration) -> Self {
-        Notification::new(message, Some(duration))
+        Self::new(message, Some(duration))
     }
 
     pub fn without_duration(message: String) -> Self {
-        Notification::new(message, None)
+        Self::new(message, None)
     }
 }
 
@@ -34,11 +28,15 @@ pub struct NotificationDrawer {
     notifications: Vec<Notification>,
 }
 
+impl Default for NotificationDrawer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NotificationDrawer {
-    pub fn new() -> Self {
-        NotificationDrawer {
-            notifications: Vec::new(),
-        }
+    pub const fn new() -> Self {
+        Self { notifications: Vec::new() }
     }
 
     pub fn add_notification(&mut self, notification: Notification) {
@@ -51,7 +49,7 @@ impl NotificationDrawer {
         }
     }
 
-    pub fn get_notifications(&self) -> &Vec<Notification> {
+    pub const fn get_notifications(&self) -> &Vec<Notification> {
         &self.notifications
     }
 
@@ -63,20 +61,19 @@ impl NotificationDrawer {
 
 impl egui::Widget for &mut NotificationDrawer {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        let mut response = ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover());
-
         if !self.notifications.is_empty() {
-            let now = now_ns() as u64;
+            let now = Instant::now();
             let mut indices_to_remove = Vec::new();
 
             for (i, notification) in self.notifications.iter().enumerate() {
-                let age = now - notification.add_time.as_nanos() as u64;
-                let fade_duration_ns = 0.2 * 1_000_000_000.0;
-                let lifetime_ns = notification.duration.map(|d| d.as_nanos() as f64).unwrap_or(f64::MAX);
-                let mut opacity: f32 = if age as f64 <= fade_duration_ns {
-                    (age as f64 / fade_duration_ns) as f32
-                } else if lifetime_ns - age as f64 <= fade_duration_ns {
-                    ((lifetime_ns - age as f64) / fade_duration_ns) as f32
+                let age = notification.added.elapsed();
+                let fade_duration = Duration::from_secs_f32(0.2);
+                let mut opacity = if age <= fade_duration {
+                    age.as_secs_f32() / fade_duration.as_secs_f32()
+                } else if let Some(lifetime) = notification.duration
+                    && lifetime - age <= fade_duration
+                {
+                    (lifetime - age).as_secs_f32() / fade_duration.as_secs_f32()
                 } else {
                     1.0
                 };
@@ -85,16 +82,10 @@ impl egui::Widget for &mut NotificationDrawer {
                     opacity = 0.01;
                 }
 
-                let color = Color32::from_hex("#222222").unwrap().gamma_multiply(opacity);
+                let color = hex_color!("#222222").gamma_multiply(opacity);
 
-                egui::Frame::none().fill(color).inner_margin(egui::Margin::same(10.)).show(ui, |ui| {
-                    let width = ui.ctx().screen_rect().width();
-                    let min_width = if width < 200. {
-                        width
-                    } else {
-                        200.
-                    };
-                    ui.set_min_width(min_width);
+                egui::Frame::new().fill(color).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
+                    ui.set_min_width(ui.ctx().screen_rect().width().min(200.));
                     ui.allocate_ui(ui.available_size(), |ui| {
                         let text_color = Color32::WHITE.gamma_multiply(opacity);
                         ui.label(egui::RichText::new(&notification.message).color(text_color));
@@ -102,10 +93,10 @@ impl egui::Widget for &mut NotificationDrawer {
                 });
 
                 // Schedule removal if a duration is specified
-                if let Some(duration) = notification.duration {
-                    if (notification.add_time.as_nanos() as u64) + (duration.as_nanos() as u64) < now {
-                        indices_to_remove.push(i);
-                    }
+                if let Some(duration) = notification.duration
+                    && notification.added + duration < now
+                {
+                    indices_to_remove.push(i);
                 }
 
                 ui.ctx().request_repaint_after_secs(0.03);
@@ -116,9 +107,9 @@ impl egui::Widget for &mut NotificationDrawer {
                 self.remove_notification(index);
             }
 
-            response = ui.allocate_response(ui.available_size(), egui::Sense::hover());
+            ui.allocate_response(ui.available_size(), egui::Sense::hover());
         }
 
-        response
+        ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
     }
 }

@@ -7,16 +7,16 @@ rust-version = { workspace = true }
 [dependencies]
 cpal = { workspace = true }
 itertools = { workspace = true }
-eframe = { version = "0.30.0", features = ["wgpu"] }
-egui = { version = "0.30.0", features = ["color-hex"] }
-egui_extras = { version = "0.30.0", features = ["all_loaders"] }
-egui_plot = "0.30.0"
+eframe = { version = "0.32.0", features = ["wgpu"] }
+egui = { version = "0.32.0", features = ["color-hex"] }
+egui_extras = { version = "0.32.0", features = ["all_loaders"] }
+egui_plot = "0.33.0"
 image = { version = "0.25.5", features = ["jpeg", "png"] }
 open = "5.3.2"
-rodio = { version = "0.20.1", features = ["minimp3"] }
+rodio = { version = "0.21.1", features = ["minimp3"] }
 rustfft = "6.2.0"
 serde = "1.0.217"
-strum = { version = "0.26.3", features = ["derive"] }
+strum = { version = "0.27.2", features = ["derive"] }
 tap = "1.0.1"
 blerp = { path = "../blerp" }
 human-panic = "2.0.2"
@@ -24,5 +24,5 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 notify = { version = "8.0.0", features = ["crossbeam-channel"] }
 crossbeam-channel = "0.5.14"
-paste = "1.0.15"
+pastey = "0.1.1"
 unicode-truncate = "2.0.0"

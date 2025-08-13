@@ -1,7 +1,7 @@
-use std::{env::args, fs::File, io::stderr, ops::ControlFlow, path::Path, process::Command};
+use std::{env::args, fs::File, io::stderr, ops::ControlFlow, path::Path};
 
 use tracing::{info, subscriber::set_global_default};
-use tracing_subscriber::{fmt::layer, layer::SubscriberExt, EnvFilter, Registry};
+use tracing_subscriber::{EnvFilter, Registry, fmt::layer, layer::SubscriberExt};
 
 fn get_desktop_environment() -> String {
     #[cfg(target_os = "linux")]
@@ -17,11 +17,7 @@ fn get_desktop_environment() -> String {
 fn get_compositor() -> String {
     #[cfg(target_os = "linux")]
     {
-        if std::env::var("WAYLAND_DISPLAY").is_ok() {
-            "Wayland".to_string()
-        } else {
-            "X11".to_string()
-        }
+        if std::env::var("WAYLAND_DISPLAY").is_ok() { "Wayland".to_string() } else { "X11".to_string() }
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -93,12 +89,11 @@ fn get_gpu_info() -> String {
 
     #[cfg(target_os = "macos")]
     {
-        if let Ok(output) = std::process::Command::new("system_profiler").arg("SPDisplaysDataType").output() {
-            if let Ok(stdout) = String::from_utf8(output.stdout) {
-                if let Some(gpu_line) = stdout.lines().find(|line| line.contains("Chipset Model:")) {
-                    return gpu_line.split(':').nth(1).unwrap_or("Unknown GPU").trim().to_string();
-                }
-            }
+        if let Ok(output) = std::process::Command::new("system_profiler").arg("SPDisplaysDataType").output()
+            && let Ok(stdout) = String::from_utf8(output.stdout)
+            && let Some(gpu_line) = stdout.lines().find(|line| line.contains("Chipset Model:"))
+        {
+            return gpu_line.split(':').nth(1).unwrap_or("Unknown GPU").trim().to_string();
         }
     }
 
@@ -159,24 +154,8 @@ pub fn handle_args() -> ControlFlow<(), ()> {
     ControlFlow::Continue(())
 }
 
-// TODO: Refactor this function for better error handling.
 pub fn open_link(link: &str) {
-    if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", "start", link])
-            .spawn()
-            .expect("Failed to open link");
-    } else if cfg!(target_os = "macos") {
-        Command::new("open")
-            .arg(link)
-            .spawn()
-            .expect("Failed to open link");
-    } else if cfg!(target_os = "linux") {
-        Command::new("xdg-open")
-            .arg(link)
-            .spawn()
-            .expect("Failed to open link");
-    }
+    open::that(link).unwrap_or_else(|_| panic!("`{link}` should be able to be opened"));
 }
 
 pub const BUG_REPORT_URL: &str = "https://github.com/TheRedXD/Volt/issues/new?template=bug_report.md";
