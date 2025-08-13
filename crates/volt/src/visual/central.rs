@@ -5,8 +5,9 @@ use std::{collections::HashMap, num::NonZeroU64};
 use blerp::processing::effects::clip::ClipEffect;
 use blerp::processing::effects::scale::ScaleEffect;
 use eframe::egui;
+use egui::scroll_area::ScrollSource;
 use egui::{
-    hex_color, pos2, scroll_area::ScrollBarVisibility, vec2, Align, Align2, Color32, CursorIcon, Frame, Id, InputState, Layout, Rect, Response, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2, Widget,
+    Align, Align2, Color32, CursorIcon, Frame, Id, InputState, Layout, Rect, Response, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2, Widget, hex_color, pos2, scroll_area::ScrollBarVisibility, vec2,
 };
 use graph::{Graph, Node, NodeData, NodeId};
 use itertools::Itertools;
@@ -47,7 +48,7 @@ mod graph {
 
 mod playlist {
     use cpal::Sample;
-    use egui::{vec2, Vec2};
+    use egui::{Vec2, vec2};
     use itertools::Itertools;
     use rodio::{Decoder, Source};
     use std::{fs::File, io::BufReader, path::PathBuf, time::Duration};
@@ -269,8 +270,11 @@ impl Central {
         playlist.zoom = playlist.zoom.max(vec2(50., 50.));
         ScrollArea::both()
             .auto_shrink(false)
-            .drag_to_scroll(false)
-            .enable_scrolling(ui.input(|input| !input.modifiers.alt))
+            .scroll_source(ScrollSource {
+                scroll_bar: true,
+                drag: false,
+                mouse_wheel: ui.input(|input| input.modifiers.alt),
+            })
             .scroll_bar_visibility(ScrollBarVisibility::AlwaysHidden)
             .show(ui, |ui| {
                 let response = ui
@@ -282,18 +286,18 @@ impl Central {
                                     .fill(ThemeColors::default().central_background)
                                     .show(ui, |ui| {
                                         let (response, painter) = ui.allocate_painter(vec2(f32::INFINITY, playlist.zoom.y), Sense::hover());
-                                        if let Some(path) = response.dnd_release_payload::<PathBuf>() {
-                                            if let Some(start) = Time::from_beats(
+                                        if let Some(path) = response.dnd_release_payload::<PathBuf>()
+                                            && let Some(start) = Time::from_beats(
                                                 f64::from((ui.input(|input| input.pointer.latest_pos().unwrap().x) - response.rect.min.x) / playlist.zoom.x)
                                                     * f64::from(playlist.time_signature.beats_per_measure),
-                                            ) {
-                                                playlist.clips.push(Clip {
-                                                    start,
-                                                    track: y,
-                                                    data: ClipData::from_path((*path).clone()),
-                                                });
-                                            }
-                                        };
+                                            )
+                                        {
+                                            playlist.clips.push(Clip {
+                                                start,
+                                                track: y,
+                                                data: ClipData::from_path((*path).clone()),
+                                            });
+                                        }
                                         #[allow(clippy::cast_precision_loss, reason = "rounding errors are negligible because this is a visual effect")]
                                         #[allow(clippy::cast_possible_truncation, reason = "truncation only occurs at unreasonably high numbers")]
                                         for Clip { start, track, data } in &playlist.clips {
@@ -304,7 +308,7 @@ impl Central {
                                             let width =
                                                 playlist.duration_of_clip(data).as_secs_f32() * playlist.tempo.bps() as f32 / playlist.time_signature.beats_per_measure as f32 * playlist.zoom.x;
                                             let rect = Rect::from_min_size(pos2(left, painter.clip_rect().top()), vec2(width, painter.clip_rect().height()));
-                                            painter.rect(rect, 4., Color32::GRAY, Stroke::new(2., Color32::DARK_GRAY));
+                                            painter.rect(rect, 4., Color32::GRAY, Stroke::new(2., Color32::DARK_GRAY), egui::StrokeKind::Middle);
                                             painter.debug_text(
                                                 rect.left_top(),
                                                 Align2::LEFT_TOP,
@@ -346,9 +350,9 @@ impl Central {
                     .iter()
                     .map(|(id, node)| {
                         let response = ui
-                            .allocate_new_ui(UiBuilder::new().max_rect(Rect::from_min_size(rect.center() + node.position + *pan_offset, Vec2::INFINITY)), |ui| {
+                            .scope_builder(UiBuilder::new().max_rect(Rect::from_min_size(rect.center() + node.position + *pan_offset, Vec2::INFINITY)), |ui| {
                                 Frame::default()
-                                    .rounding(4.)
+                                    .corner_radius(4)
                                     .inner_margin(4.)
                                     .stroke(Stroke::new(1., hex_color!("80808080")))
                                     .show(ui, |ui| {

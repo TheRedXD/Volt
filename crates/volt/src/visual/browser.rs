@@ -1,14 +1,13 @@
 use blerp::utils::zip;
 use itertools::Itertools;
-use notify::{recommended_watcher, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher, recommended_watcher};
 use open::that_detached;
-use rodio::{Decoder, OutputStream, Sink, Source};
-use unicode_truncate::UnicodeTruncateStr;
+use rodio::{Decoder, OutputStreamBuilder, Sink, Source};
 use std::{
     borrow::Cow,
     collections::HashMap,
     f32::consts::FRAC_PI_2,
-    fs::{read_dir, File},
+    fs::{File, read_dir},
     io::BufReader,
     iter::Iterator,
     ops::BitOr,
@@ -24,14 +23,18 @@ use std::{
 use strum::Display;
 use tap::Pipe;
 use tracing::{error, trace};
+use unicode_truncate::UnicodeTruncateStr;
 
 use egui::{
-    emath::{self, TSTransform}, epaint::text::FontPriority, include_image, vec2, Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, Label, LayerId, Margin, Order, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke, Ui, UiBuilder, Vec2, Widget
+    Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke, Ui, UiBuilder, Vec2,
+    Widget,
+    emath::{self, TSTransform},
+    include_image, vec2,
 };
 
-use crossbeam_channel::{bounded, unbounded, Receiver, Sender, TryRecvError};
+use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 
-use crate::visual::{browser, ThemeColors};
+use crate::visual::ThemeColors;
 
 // https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#bit-twiddling
 macro_rules! count_tts {
@@ -179,8 +182,8 @@ impl Browser {
                 let (file_data_tx, file_data_rx) = unbounded();
                 // FIXME: Temporary rodio playback, might need to use cpal or make rodio proper
                 spawn(move || {
-                    let (_stream, handle) = OutputStream::try_default().unwrap();
-                    let sink = Sink::try_new(&handle).unwrap();
+                    let stream = OutputStreamBuilder::open_default_stream().unwrap();
+                    let sink = Sink::connect_new(stream.mixer());
                     let mut last_path = None;
                     loop {
                         let Ok(path) = path_rx.recv() else {
@@ -233,7 +236,7 @@ impl Browser {
             let watch_result = cached_entry_kinds.watcher.watch(path.parent().unwrap_or(path), RecursiveMode::NonRecursive);
             if let Err(error) = watch_result {
                 error!("Unexpected error while trying to watch directory: {:?}", error);
-            };
+            }
             trace!("entry kind cache miss for {:?}", path);
             if path.is_dir() {
                 EntryKind::Directory
@@ -305,14 +308,14 @@ impl Browser {
         scroll_area
             .show_rows(ui, Self::ENTRY_HEIGHT, entries.len(), |ui, row_range| {
                 egui::Frame::default()
-                    .inner_margin(Margin::same(8.))
+                    .inner_margin(Margin::same(8))
                     .show(ui, |ui| {
                         ui.vertical(|ui| {
                             ui.visuals_mut().widgets.noninteractive.fg_stroke.color = self.theme.browser_folder_text;
                             ui.visuals_mut().widgets.hovered.fg_stroke.color = self.theme.browser_folder_hover_text;
                             ui.style_mut().spacing.item_spacing.x = 4.;
                             let entries_iter = entries.into_iter();
-                            for entry in entries_iter.skip(row_range.start).take(row_range.len()+8) {
+                            for entry in entries_iter.skip(row_range.start).take(row_range.len() + 8) {
                                 self.add_entry(entry, ui, browser_width);
                             }
                         })
@@ -399,7 +402,7 @@ impl Browser {
                     match &mut entries[len - 1].data {
                         Poll::Ready(EntryData { path, .. }) => *path = entry,
                         Poll::Pending => unreachable!(),
-                    };
+                    }
                 }
             }
             Poll::Pending => match rx.try_recv() {
@@ -438,7 +441,8 @@ impl Browser {
         let char_length = name.to_string().len();
         let mut final_char_length = char_length;
         let mut final_text = name.to_string();
-        let available_width = browser_width - 30. - (INDENT_SIZE * depth as f32);
+        #[allow(clippy::cast_precision_loss, reason = "this is a visual effect")]
+        let available_width = INDENT_SIZE.mul_add(-(depth as f32), browser_width - 30.);
         if full_width > available_width {
             for i in char_length..0 {
                 let string = name.to_string();
@@ -471,7 +475,7 @@ impl Browser {
                         EntryKind::Audio => self.add_audio_entry(&path, ui, &Rc::clone(&self.theme), button),
                         EntryKind::File => Self::add_file(ui, button(&self.theme)),
                         EntryKind::Directory => {
-                            ui.horizontal(|ui| ui.add(self.collapsing_header_icon(f32::from(self.expanded_paths.iter().any(|expanded| *expanded == path)))) | ui.add(button(&self.theme)))
+                            ui.horizontal(|ui| ui.add(self.collapsing_header_icon(f32::from(self.expanded_paths.contains(&path)))) | ui.add(button(&self.theme)))
                                 .inner
                         }
                     }
@@ -582,7 +586,11 @@ impl Widget for &mut Browser {
             ui.visuals_mut().extreme_bg_color = Color32::from_hex("#7676a340").unwrap();
             // ui.style_mut().spacing.scroll.floating = false;
             let scroll_area = ScrollArea::both()
-                .drag_to_scroll(false)
+                .scroll_source(egui::scroll_area::ScrollSource {
+                    scroll_bar: true,
+                    drag: false,
+                    mouse_wheel: true,
+                })
                 .auto_shrink(false)
                 // .hscroll(false)
                 .max_width(ui.available_width() - 6.)

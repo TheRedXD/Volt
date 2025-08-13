@@ -1,51 +1,44 @@
+use std::time::Duration;
 use std::sync::{Arc, LazyLock, Mutex};
-
-pub fn now_ns() -> f64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as f64
-}
-
-pub fn ns_to_ms(ns: f64) -> f64 {
-    ns / 1_000_000.0
-}
 
 macro_rules! generate_timings {
     ($($name:ident),*) => {
         struct SharedTimings {
             $(
-                $name: f64,
+                $name: Duration,
             )*
         }
 
         static SHARED_TIMINGS: LazyLock<Arc<Mutex<SharedTimings>>> =
             LazyLock::new(|| Arc::new(Mutex::new(SharedTimings {
                 $(
-                $name: 0.0,
+                $name: Duration::ZERO,
                 )*
             }
         )));
 
         $(
-            paste::item! {
-                #[allow(dead_code)]
-                pub fn [<get_ $name _time>]() -> f64 {
+            pastey::paste! {
+                #[allow(dead_code, reason = "this is a debugging tool")]
+                pub fn [<get_ $name _time>]() -> Duration {
                     SHARED_TIMINGS.lock().unwrap().$name
                 }
 
-                #[allow(dead_code)]
-                pub fn [<set_ $name _time>](time: f64) {
+                #[allow(dead_code, reason = "this is a debugging tool")]
+                pub fn [<set_ $name _time>](time: Duration) {
                     SHARED_TIMINGS.lock().unwrap().$name = time;
                 }
             }
         )*
 
-        #[allow(dead_code)]
-        pub fn show_timings(ctx: &egui::Context, window_name: &str, accuracy: usize) {
+        #[allow(dead_code, reason = "this is a debugging tool")]
+        pub fn show_timings(ctx: &egui::Context, window_name: &str) {
             egui::Window::new(window_name)
                 .collapsible(false)
                 .show(ctx, |ui| {
                     $(
-                        paste::item! {
-                            ui.label(format!("{}: {:.accuracy$}ms", stringify!($name), ns_to_ms([<get_ $name _time>]()), accuracy = accuracy));
+                        pastey::paste! {
+                            ui.label(format!("{}: {:?}", stringify!($name), [<get_ $name _time>]()));
                         }
                     )*
                 });
@@ -54,4 +47,3 @@ macro_rules! generate_timings {
 }
 
 generate_timings!(render);
-

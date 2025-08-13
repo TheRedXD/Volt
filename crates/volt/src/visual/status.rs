@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{include_image, Color32, FontFamily, Image, Label, Margin, RichText, TextureOptions, Ui, Vec2, Widget};
+use egui::{FontFamily, Label, Margin, RichText, TextureOptions, Ui, Vec2, Widget, hex_color};
 
 use super::ThemeColors;
 
@@ -21,10 +21,10 @@ pub fn status(themes: &ThemeColors) -> impl Widget + use<'_> {
         ui.horizontal(|ui| {
             egui::Frame::default().show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    egui::Frame::none().show(ui, |ui| {
+                    egui::Frame::new().show(ui, |ui| {
                         ui.style_mut().spacing.item_spacing = Vec2::ZERO;
-                        egui::Frame::none().inner_margin(Margin::same(5.)).show(ui, |ui| {
-                            ui.add(Label::new(RichText::new("Volt v1.0.0").family(FontFamily::Proportional).color(Color32::from_hex("#777490").unwrap())).selectable(false));
+                        egui::Frame::new().inner_margin(Margin::same(5)).show(ui, |ui| {
+                            ui.add(Label::new(RichText::new("Volt v1.0.0").family(FontFamily::Proportional).color(hex_color!("#777490"))).selectable(false));
                         });
                     });
                 })
