@@ -1,7 +1,4 @@
-use blerp::{
-    utils::zip,
-    wavefile::{Format, WaveFile},
-};
+use blerp::utils::zip;
 use cpal::{
     Host, Sample,
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -13,8 +10,8 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     f32::consts::FRAC_PI_2,
-    fs::{read, read_dir},
-    iter::Iterator,
+    fs::{File, read, read_dir},
+    iter::{Iterator, from_fn},
     ops::BitOr,
     path::{Path, PathBuf},
     rc::Rc,
@@ -27,7 +24,19 @@ use std::{
     vec,
 };
 use strum::Display;
-use tap::Pipe;
+use symphonia::{
+    core::{
+        audio::{AudioBuffer, Signal},
+        codecs::DecoderOptions,
+        errors::Error as SymphoniaError,
+        formats::FormatOptions,
+        io::{MediaSourceStream, MediaSourceStreamOptions},
+        meta::MetadataOptions,
+        probe::{Hint, Probe},
+    },
+    default::{get_codecs, get_probe},
+};
+use tap::{Pipe, Tap};
 use tracing::{error, trace};
 use unicode_truncate::UnicodeTruncateStr;
 
@@ -184,7 +193,7 @@ impl Browser {
             open_paths: vec![PathBuf::from_str("/").unwrap()],
             expanded_paths: Vec::new(),
             preview: {
-                let (path_tx, path_rx) = unbounded();
+                let (path_tx, path_rx) = unbounded::<Arc<Path>>();
                 let (file_data_tx, file_data_rx) = unbounded();
                 spawn(move || {
                     let device = Host::default().default_output_device().unwrap();
@@ -216,33 +225,43 @@ impl Browser {
                         let Ok(path) = path_rx.recv() else {
                             break;
                         };
-                        let wavefile = WaveFile::read(&read(&path).unwrap()).unwrap();
-                        for [left, right] in wavefile
-                            .data
-                            .into_iter()
-                            .chunks(wavefile.bytes_per_sample as usize)
-                            .into_iter()
-                            .chunks(wavefile.channels.get() as usize)
-                            .into_iter()
-                            .map(move |channels| {
-                                let decode = |mut sample: Chunk<'_, vec::IntoIter<u8>>| match wavefile.format {
-                                    Format::PulseCodeModulation => match wavefile.bytes_per_sample {
-                                        1 => f32::from_sample(u8::from_le_bytes(sample.next_array().unwrap())),
-                                        2 => f32::from_sample(i16::from_le_bytes(sample.next_array().unwrap())),
-                                        4 => f32::from_sample(i32::from_le_bytes(sample.next_array().unwrap())),
-                                        8 => f32::from_sample(i64::from_le_bytes(sample.next_array().unwrap())),
-                                        _ => unimplemented!(),
-                                    },
-                                    Format::FloatingPoint => todo!(),
-                                };
-                                match wavefile.channels.get() {
-                                    2 => channels.map(decode).collect_array().unwrap(),
-                                    _ => [channels.map(decode).sum::<f32>() / f32::from(wavefile.channels.get()); 2],
+                        let mut format_reader = get_probe()
+                            .format(
+                                Hint::new().pipe_ref_mut(|hint| match (*path).extension().and_then(|extension| extension.to_str()) {
+                                    Some(extension) => hint.with_extension(extension),
+                                    None => hint,
+                                }),
+                                MediaSourceStream::new(Box::new(File::open(&path).unwrap()), MediaSourceStreamOptions::default()),
+                                &FormatOptions::default(),
+                                &MetadataOptions::default(),
+                            )
+                            .unwrap()
+                            .format;
+                        for codec_params in format_reader.tracks().iter().map(|track| track.codec_params.clone()).collect_vec() {
+                            let mut decoder = get_codecs().make(&codec_params, &DecoderOptions::default()).unwrap();
+                            for packet in from_fn(|| format_reader.next_packet().ok()) {
+                                let r#in = decoder.decode(&packet).unwrap();
+                                let mut out = AudioBuffer::new(r#in.capacity() as u64, *r#in.spec());
+                                r#in.convert(&mut out);
+                                let mut planes = out.planes_mut();
+                                let planes = planes.planes();
+                                if let [left, right] = planes {
+                                    for sample in left.iter().copied().zip(right.iter().copied()) {
+                                        for _ in 0..sample_rate / r#in.spec().rate {
+                                            samples_tx.send(sample.into()).unwrap();
+                                        }
+                                    }
+                                } else {
+                                    let mut planes = planes.iter().map(|plane| plane.iter()).collect_vec();
+                                    for sample in from_fn(|| {
+                                        let (sum, count) = planes.iter_mut().try_fold((0., 0.), |(sum, count), plane| Some((sum + plane.next()?, count + 1.)))?;
+                                        Some(sum / count)
+                                    }) {
+                                        for _ in 0..sample_rate / r#in.spec().rate {
+                                            samples_tx.send([sample; 2]).unwrap();
+                                        }
+                                    }
                                 }
-                            })
-                        {
-                            for _ in 0..sample_rate / wavefile.sample_rate {
-                                samples_tx.send([left, right]).unwrap();
                             }
                         }
                         if last_path.is_none_or(|last_path| last_path != path) {

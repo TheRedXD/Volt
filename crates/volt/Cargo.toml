@@ -25,3 +25,4 @@ notify = { version = "8.0.0", features = ["crossbeam-channel"] }
 crossbeam-channel = "0.5.14"
 pastey = "0.1.1"
 unicode-truncate = "2.0.0"
+symphonia = { version = "0.5.4", features = ["all"] }

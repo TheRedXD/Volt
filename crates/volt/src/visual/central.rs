@@ -134,7 +134,7 @@ mod playlist {
 
     impl ClipData {
         pub fn from_path(path: PathBuf) -> Self {
-            todo!();
+            todo!("Implement reading audio files");
             // let length = decoder.total_duration().unwrap();
             // let samples = decoder.map(f64::from_sample).collect_vec();
             // Self::Audio { path, samples, length }

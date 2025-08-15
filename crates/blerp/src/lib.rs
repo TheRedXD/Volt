@@ -1,7 +1,6 @@
 #![warn(clippy::nursery, clippy::pedantic, clippy::undocumented_unsafe_blocks, clippy::allow_attributes_without_reason)]
 pub mod device;
 pub mod processing;
-pub mod wavefile;
 
 pub mod utils {
     use std::mem::{transmute_copy, ManuallyDrop, MaybeUninit};
