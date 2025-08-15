@@ -1,14 +1,19 @@
-use blerp::utils::zip;
-use itertools::Itertools;
+use blerp::{
+    utils::zip,
+    wavefile::{Format, WaveFile},
+};
+use cpal::{
+    Host, Sample,
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+};
+use itertools::{Chunk, Itertools};
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher, recommended_watcher};
 use open::that_detached;
-use rodio::{Decoder, OutputStreamBuilder, Sink, Source};
 use std::{
     borrow::Cow,
     collections::HashMap,
     f32::consts::FRAC_PI_2,
-    fs::{File, read_dir},
-    io::BufReader,
+    fs::{read, read_dir},
     iter::Iterator,
     ops::BitOr,
     path::{Path, PathBuf},
@@ -19,6 +24,7 @@ use std::{
     task::Poll,
     thread::spawn,
     time::{Duration, Instant},
+    vec,
 };
 use strum::Display;
 use tap::Pipe;
@@ -32,7 +38,7 @@ use egui::{
     include_image, vec2,
 };
 
-use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, bounded, unbounded};
 
 use crate::visual::ThemeColors;
 
@@ -180,26 +186,72 @@ impl Browser {
             preview: {
                 let (path_tx, path_rx) = unbounded();
                 let (file_data_tx, file_data_rx) = unbounded();
-                // FIXME: Temporary rodio playback, might need to use cpal or make rodio proper
                 spawn(move || {
-                    let stream = OutputStreamBuilder::open_default_stream().unwrap();
-                    let sink = Sink::connect_new(stream.mixer());
+                    let device = Host::default().default_output_device().unwrap();
+                    let (samples_tx, samples_rx) = unbounded::<[f32; 2]>();
+                    let config = device.default_output_config().unwrap();
+                    let sample_rate = config.sample_rate().0;
+                    let stream = device
+                        .build_output_stream(
+                            &config.config(),
+                            move |data, _| {
+                                for sample in data.chunks_mut(config.channels() as usize) {
+                                    sample.copy_from_slice(&match samples_rx.try_recv() {
+                                        Ok(sample) => sample,
+                                        Err(TryRecvError::Empty) => [0., 0.],
+                                        Err(TryRecvError::Disconnected) => {
+                                            panic!()
+                                        }
+                                    });
+                                }
+                            },
+                            |_| {},
+                            None,
+                        )
+                        .unwrap();
+                    stream.play().unwrap();
+
                     let mut last_path = None;
                     loop {
                         let Ok(path) = path_rx.recv() else {
                             break;
                         };
-                        let source = Decoder::new(BufReader::new(File::open(&path).unwrap())).unwrap();
-                        let empty = sink.empty();
-                        sink.stop();
-                        if last_path.is_none_or(|last_path| last_path != path) || empty {
+                        let wavefile = WaveFile::read(&read(&path).unwrap()).unwrap();
+                        for [left, right] in wavefile
+                            .data
+                            .into_iter()
+                            .chunks(wavefile.bytes_per_sample as usize)
+                            .into_iter()
+                            .chunks(wavefile.channels.get() as usize)
+                            .into_iter()
+                            .map(move |channels| {
+                                let decode = |mut sample: Chunk<'_, vec::IntoIter<u8>>| match wavefile.format {
+                                    Format::PulseCodeModulation => match wavefile.bytes_per_sample {
+                                        1 => f32::from_sample(u8::from_le_bytes(sample.next_array().unwrap())),
+                                        2 => f32::from_sample(i16::from_le_bytes(sample.next_array().unwrap())),
+                                        4 => f32::from_sample(i32::from_le_bytes(sample.next_array().unwrap())),
+                                        8 => f32::from_sample(i64::from_le_bytes(sample.next_array().unwrap())),
+                                        _ => unimplemented!(),
+                                    },
+                                    Format::FloatingPoint => todo!(),
+                                };
+                                match wavefile.channels.get() {
+                                    2 => channels.map(decode).collect_array().unwrap(),
+                                    _ => [channels.map(decode).sum::<f32>() / f32::from(wavefile.channels.get()); 2],
+                                }
+                            })
+                        {
+                            for _ in 0..sample_rate / wavefile.sample_rate {
+                                samples_tx.send([left, right]).unwrap();
+                            }
+                        }
+                        if last_path.is_none_or(|last_path| last_path != path) {
                             file_data_tx
                                 .send(PreviewData {
-                                    length: source.total_duration(),
+                                    length: None,
                                     started_playing: Instant::now(),
                                 })
                                 .unwrap();
-                            sink.append(source);
                         }
                         last_path = Some(path);
                     }

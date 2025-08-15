@@ -1,5 +1,5 @@
 use std::{
-    fmt::Debug,
+    fmt::{self, Debug},
     hint::unreachable_unchecked,
     io::{self, Write},
     mem::size_of,
@@ -9,22 +9,40 @@ use std::{
 use cpal::FromSample;
 use itertools::Itertools;
 use nom::{
+    Err,
     combinator::complete,
     error::{ErrorKind, FromExternalError, ParseError},
-    Err,
 };
 use nom_locate::LocatedSpan;
 use num::traits::ToBytes;
-use read::{wave_file, Input};
+use read::{Input, wave_file};
 use thiserror::Error;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WaveFile {
     pub format: Format,
     pub channels: NonZeroU16,
     pub sample_rate: u32,
     pub bytes_per_sample: u16,
     pub data: Vec<u8>,
+}
+
+impl Debug for WaveFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct Data<'a>(&'a [u8]);
+        impl Debug for Data<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                write!(f, "<{} bytes>", self.0.len())
+            }
+        }
+        f.debug_struct("WaveFile")
+            .field("format", &self.format)
+            .field("channels", &self.channels)
+            .field("sample_rate", &self.sample_rate)
+            .field("bytes_per_sample", &self.bytes_per_sample)
+            .field("data", &Data(&self.data))
+            .finish()
+    }
 }
 
 #[repr(u16)]
@@ -233,13 +251,13 @@ mod read {
     use std::num::NonZeroU16;
 
     use nom::{
+        IResult,
         branch::{alt, permutation},
         bytes::complete::{tag, take},
         combinator::{all_consuming, consumed, map, map_res, opt, verify},
         multi::{length_data, length_value},
         number::complete::{le_u16, le_u32},
         sequence::{preceded, terminated, tuple},
-        IResult,
     };
     use nom_locate::LocatedSpan;
 
@@ -291,7 +309,7 @@ mod read {
                         return Err(ReadError {
                             kind: ReadErrorKind::FormatNotSupported,
                             position: format_span.location_offset(),
-                        })
+                        });
                     }
                 };
                 if format == Format::FloatingPoint && !has_extension {
@@ -309,7 +327,7 @@ mod read {
     fn data_chunk(input: Input) -> IResult<Input, Input, ReadError> {
         preceded(
             tag(b"data"),
-            alt((verify(length_data(le_u32), |data: &Input| data.len() % 2 == 0), terminated(length_data(le_u32), take(1_usize)))),
+            alt((verify(length_data(le_u32), |data: &Input| data.len().is_multiple_of(2)), terminated(length_data(le_u32), take(1_usize)))),
         )(input)
     }
 
@@ -341,7 +359,7 @@ mod read {
                             position: input.len(),
                         });
                     }
-                    if data.len() % block_size as usize != 0 {
+                    if !data.len().is_multiple_of(block_size as usize) {
                         return Err(ReadError {
                             kind: ReadErrorKind::DataSizeNotMultipleOfBlockSize,
                             position: data.location_offset(),

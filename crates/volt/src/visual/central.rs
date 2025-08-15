@@ -50,7 +50,6 @@ mod playlist {
     use cpal::Sample;
     use egui::{Vec2, vec2};
     use itertools::Itertools;
-    use rodio::{Decoder, Source};
     use std::{fs::File, io::BufReader, path::PathBuf, time::Duration};
 
     #[derive(Debug)]
@@ -135,10 +134,10 @@ mod playlist {
 
     impl ClipData {
         pub fn from_path(path: PathBuf) -> Self {
-            let decoder = Decoder::new(BufReader::new(File::open(&path).unwrap())).unwrap();
-            let length = decoder.total_duration().unwrap();
-            let samples = decoder.map(f64::from_sample).collect_vec();
-            Self::Audio { path, samples, length }
+            todo!();
+            // let length = decoder.total_duration().unwrap();
+            // let samples = decoder.map(f64::from_sample).collect_vec();
+            // Self::Audio { path, samples, length }
         }
     }
 
