@@ -1,9 +1,11 @@
 #![warn(clippy::nursery, clippy::pedantic, clippy::undocumented_unsafe_blocks, clippy::allow_attributes_without_reason)]
 pub mod device;
 pub mod processing;
+pub mod read;
+pub use read::read;
 
 pub mod utils {
-    use std::mem::{transmute_copy, ManuallyDrop, MaybeUninit};
+    use std::mem::{ManuallyDrop, MaybeUninit, transmute_copy};
 
     // https://internals.rust-lang.org/t/should-there-by-an-array-zip-method/21611/5
     pub fn zip<T, U, const N: usize>(ts: [T; N], us: [U; N]) -> [(T, U); N] {

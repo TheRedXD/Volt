@@ -47,10 +47,9 @@ mod graph {
 }
 
 mod playlist {
-    use cpal::Sample;
+    use blerp::read::{Channel, Track};
     use egui::{Vec2, vec2};
-    use itertools::Itertools;
-    use std::{fs::File, io::BufReader, path::PathBuf, time::Duration};
+    use std::{fs::File, path::Path, sync::Arc, time::Duration};
 
     #[derive(Debug)]
     pub struct Playlist {
@@ -128,16 +127,22 @@ mod playlist {
 
     #[derive(Debug, Clone)]
     pub enum ClipData {
-        Audio { path: PathBuf, samples: Vec<f64>, length: Duration },
+        Audio { path: Arc<Path>, channels: Vec<Channel<f64>>, length: Duration },
         Midi { length: Time },
     }
 
     impl ClipData {
-        pub fn from_path(path: PathBuf) -> Self {
-            todo!("Implement reading audio files");
-            // let length = decoder.total_duration().unwrap();
-            // let samples = decoder.map(f64::from_sample).collect_vec();
-            // Self::Audio { path, samples, length }
+        pub fn from_path(path: Arc<Path>) -> impl Iterator<Item = Self> {
+            blerp::read::<f64, _>(File::open(&path).unwrap()).unwrap().map(move |track| {
+                let Track { channels, sample_rate } = track.unwrap();
+                #[allow(clippy::cast_precision_loss, reason = "this is a duration")]
+                let length = Duration::from_secs_f64(channels.iter().map(|c| c.samples.len()).max().unwrap_or(0) as f64 / f64::from(sample_rate.unwrap_or(44100)));
+                Self::Audio {
+                    path: Arc::clone(&path),
+                    channels,
+                    length,
+                }
+            })
         }
     }
 
@@ -291,11 +296,9 @@ impl Central {
                                                     * f64::from(playlist.time_signature.beats_per_measure),
                                             )
                                         {
-                                            playlist.clips.push(Clip {
-                                                start,
-                                                track: y,
-                                                data: ClipData::from_path((*path).clone()),
-                                            });
+                                            for data in ClipData::from_path((*path).clone().into()) {
+                                                playlist.clips.push(Clip { start, track: y, data });
+                                            }
                                         }
                                         #[allow(clippy::cast_precision_loss, reason = "rounding errors are negligible because this is a visual effect")]
                                         #[allow(clippy::cast_possible_truncation, reason = "truncation only occurs at unreasonably high numbers")]

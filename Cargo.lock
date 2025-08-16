@@ -597,6 +597,8 @@ dependencies = [
  "nom",
  "nom_locate",
  "num",
+ "symphonia",
+ "tap",
  "thiserror 2.0.9",
 ]
 

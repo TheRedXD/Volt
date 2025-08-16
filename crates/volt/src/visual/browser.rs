@@ -1,17 +1,17 @@
-use blerp::utils::zip;
+use blerp::{read::Track, utils::zip};
 use cpal::{
-    Host, Sample,
+    Host,
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
-use itertools::{Chunk, Itertools};
+use itertools::Itertools;
 use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher, recommended_watcher};
 use open::that_detached;
 use std::{
     borrow::Cow,
     collections::HashMap,
     f32::consts::FRAC_PI_2,
-    fs::{File, read, read_dir},
-    iter::{Iterator, from_fn},
+    fs::{File, read_dir},
+    iter::Iterator,
     ops::BitOr,
     path::{Path, PathBuf},
     rc::Rc,
@@ -24,19 +24,7 @@ use std::{
     vec,
 };
 use strum::Display;
-use symphonia::{
-    core::{
-        audio::{AudioBuffer, Signal},
-        codecs::DecoderOptions,
-        errors::Error as SymphoniaError,
-        formats::FormatOptions,
-        io::{MediaSourceStream, MediaSourceStreamOptions},
-        meta::MetadataOptions,
-        probe::{Hint, Probe},
-    },
-    default::{get_codecs, get_probe},
-};
-use tap::{Pipe, Tap};
+use tap::Pipe;
 use tracing::{error, trace};
 use unicode_truncate::UnicodeTruncateStr;
 
@@ -47,7 +35,7 @@ use egui::{
     include_image, vec2,
 };
 
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TryRecvError, bounded, unbounded};
+use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 
 use crate::visual::ThemeColors;
 
@@ -199,7 +187,7 @@ impl Browser {
                     let device = Host::default().default_output_device().unwrap();
                     let (samples_tx, samples_rx) = unbounded::<[f32; 2]>();
                     let config = device.default_output_config().unwrap();
-                    let sample_rate = config.sample_rate().0;
+                    let device_sample_rate = config.sample_rate().0;
                     let stream = device
                         .build_output_stream(
                             &config.config(),
@@ -225,42 +213,43 @@ impl Browser {
                         let Ok(path) = path_rx.recv() else {
                             break;
                         };
-                        let mut format_reader = get_probe()
-                            .format(
-                                Hint::new().pipe_ref_mut(|hint| match (*path).extension().and_then(|extension| extension.to_str()) {
-                                    Some(extension) => hint.with_extension(extension),
-                                    None => hint,
-                                }),
-                                MediaSourceStream::new(Box::new(File::open(&path).unwrap()), MediaSourceStreamOptions::default()),
-                                &FormatOptions::default(),
-                                &MetadataOptions::default(),
-                            )
-                            .unwrap()
-                            .format;
-                        for codec_params in format_reader.tracks().iter().map(|track| track.codec_params.clone()).collect_vec() {
-                            let mut decoder = get_codecs().make(&codec_params, &DecoderOptions::default()).unwrap();
-                            for packet in from_fn(|| format_reader.next_packet().ok()) {
-                                let r#in = decoder.decode(&packet).unwrap();
-                                let mut out = AudioBuffer::new(r#in.capacity() as u64, *r#in.spec());
-                                r#in.convert(&mut out);
-                                let mut planes = out.planes_mut();
-                                let planes = planes.planes();
-                                if let [left, right] = planes {
-                                    for sample in left.iter().copied().zip(right.iter().copied()) {
-                                        for _ in 0..sample_rate / r#in.spec().rate {
-                                            samples_tx.send(sample.into()).unwrap();
-                                        }
+                        let tracks = blerp::read(File::open(&path).unwrap()).unwrap();
+                        for track in tracks {
+                            let Track {
+                                channels,
+                                sample_rate: track_sample_rate,
+                            } = track.unwrap();
+                            let mut channels = channels.into_iter().map(|channel| channel.samples.into_iter()).collect_vec();
+                            while let Some(sample) = channels
+                                .iter_mut()
+                                .map(Iterator::next)
+                                .try_fold((0., 0., [None; 2]), |(sum, count, stereo), sample| {
+                                    sample.map(|sample| {
+                                        (
+                                            sum + sample,
+                                            count + 1.,
+                                            match stereo {
+                                                [None, None] => [Some(sample), None],
+                                                [Some(left), None] => [Some(left), Some(sample)],
+                                                [None, Some(right)] => [Some(sample), Some(right)],
+                                                full => full,
+                                            },
+                                        )
+                                    })
+                                })
+                                .map(|(sum, count, stereo)| {
+                                    #[expect(clippy::float_cmp, reason = "count is a small integer represented by a float")]
+                                    if let [Some(left), Some(right)] = stereo
+                                        && count == 2.
+                                    {
+                                        [left, right]
+                                    } else {
+                                        [sum / count; 2]
                                     }
-                                } else {
-                                    let mut planes = planes.iter().map(|plane| plane.iter()).collect_vec();
-                                    for sample in from_fn(|| {
-                                        let (sum, count) = planes.iter_mut().try_fold((0., 0.), |(sum, count), plane| Some((sum + plane.next()?, count + 1.)))?;
-                                        Some(sum / count)
-                                    }) {
-                                        for _ in 0..sample_rate / r#in.spec().rate {
-                                            samples_tx.send([sample; 2]).unwrap();
-                                        }
-                                    }
+                                })
+                            {
+                                for _ in 0..track_sample_rate.map_or(1, |track_sample_rate| device_sample_rate / track_sample_rate) {
+                                    samples_tx.send(sample).unwrap();
                                 }
                             }
                         }
