@@ -9,9 +9,12 @@ use cpal::{
 };
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use parking_lot::Mutex;
-use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
-    Arc,
+use std::{
+    cmp,
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc,
+    },
 };
 use tracing::{debug, error, info, warn};
 
@@ -310,9 +313,9 @@ impl AudioStream {
 
             // Channel count score (exact match is best)
             match channels.cmp(&target_channels) {
-                std::cmp::Ordering::Equal => score += 500.0,
-                std::cmp::Ordering::Greater => score += 100.0,
-                std::cmp::Ordering::Less => (),
+                cmp::Ordering::Equal => score += 500.0,
+                cmp::Ordering::Greater => score += 100.0,
+                cmp::Ordering::Less => (),
             }
 
             // Prefer f32 sample format

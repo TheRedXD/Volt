@@ -1,8 +1,8 @@
 use crate::utils::Channel;
 use parking_lot::Mutex;
 use ringbuf::{
-    HeapCons, HeapProd, HeapRb,
     traits::{Consumer, Observer, Producer, Split},
+    HeapCons, HeapProd, HeapRb,
 };
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ pub struct AudioBuffer<T> {
 impl<T: Copy + Default> AudioBuffer<T> {
     /// Create a new audio buffer
     /// - capacity: Total number of samples (must be divisible by channels for frame alignment)
-    /// - channels: Number of audio channels (1=mono, 2=stereo, etc.)
+    /// - channel: Channel kind for this buffer (Mono, Stereo, Multitrack)
     ///
     /// # Panics
     /// Panics if the channel count is 0 or if capacity is not divisible by channel count.
