@@ -1,4 +1,4 @@
-use cpal::{DevicesError, StreamError};
+use cpal::{BuildStreamError, DevicesError, PlayStreamError, StreamError, SupportedStreamConfigsError};
 use std::io;
 use thiserror::Error;
 
@@ -9,6 +9,15 @@ pub enum PlaybackError {
 
     #[error("Audio stream error: {0}")]
     Stream(#[from] StreamError),
+    
+    #[error("Failed to build audio stream: {0}")]
+    BuildStream(#[from] BuildStreamError),
+    
+    #[error("Failed to play audio stream: {0}")]
+    PlayStream(#[from] PlayStreamError),
+    
+    #[error("Failed to get supported stream configs: {0}")]
+    SupportedConfigs(#[from] SupportedStreamConfigsError),
 
     #[error("Unsupported audio format")]
     UnsupportedFormat,
