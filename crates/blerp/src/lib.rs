@@ -1,5 +1,6 @@
 #![warn(clippy::nursery, clippy::pedantic, clippy::undocumented_unsafe_blocks, clippy::allow_attributes_without_reason)]
-pub mod device;
+// pub mod device;  // Commented out - unused legacy device implementation
+pub mod playback;
 pub mod processing;
 pub mod wavefile;
 
@@ -20,5 +21,22 @@ pub mod utils {
         }
         // SAFETY: zip has been fully initialized
         unsafe { transmute_copy(&zip) }
+    }
+
+    #[derive(Clone, Copy, PartialEq)]
+    pub enum Channel {
+        Mono,
+        Stereo,
+        MultiTrack(usize),
+    }
+
+    impl From<Channel> for usize {
+        fn from(value: Channel) -> Self {
+            match value {
+                Channel::Mono => 1,
+                Channel::Stereo => 2,
+                Channel::MultiTrack(n) => n,
+            }
+        }
     }
 }
