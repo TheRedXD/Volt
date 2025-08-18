@@ -12,14 +12,11 @@ use egui::{
 use itertools::Itertools;
 use notify::{recommended_watcher, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use open::that_detached;
-use rodio::{Decoder, OutputStreamBuilder, Sink, Source};
-use serde::de;
 use std::{
     borrow::Cow,
     collections::HashMap,
     f32::consts::FRAC_PI_2,
-    fs::{read_dir, File},
-    io::BufReader,
+    fs::read_dir,
     iter::Iterator,
     ops::BitOr,
     path::{Path, PathBuf},
@@ -29,7 +26,6 @@ use std::{
     sync::{Arc, RwLock},
     task::Poll,
     thread::spawn,
-    time::Instant,
 };
 use strum::Display;
 use tap::Pipe;

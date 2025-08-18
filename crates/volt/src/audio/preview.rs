@@ -1,5 +1,5 @@
 use blerp::{
-    streaming::{buffer, AudioStream, DeviceManager, SampleBuffer, StreamCommand, StreamingError},
+    streaming::{AudioStream, DeviceManager, SampleBuffer, StreamCommand, StreamingError},
     utils::Channel,
     wavefile::WaveFile,
 };
@@ -30,23 +30,13 @@ pub type PreviewResult<T> = Result<T, PreviewError>;
 #[derive(Debug, Clone)]
 pub enum PreviewCommand {
     PlayFile(PathBuf),
-    Stop,
     Shutdown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PreviewState {
-    Idle,
-    Loading,
-    Playing,
-    Error,
 }
 
 #[derive(Debug, Clone)]
 pub struct PreviewData {
     pub length: Option<Duration>,
     pub started_playing: Instant,
-    pub current_file: Option<PathBuf>, // Store current file reference
 }
 
 pub struct Preview {
@@ -85,10 +75,6 @@ impl Preview {
         self.command_tx.send(PreviewCommand::PlayFile(path)).map_err(|_| PreviewError::NotInitialized)
     }
 
-    pub fn stop(&self) -> Result<(), PreviewError> {
-        self.command_tx.send(PreviewCommand::Stop).map_err(|_| PreviewError::NotInitialized)
-    }
-
     pub fn get_data(&self) -> Option<PreviewData> {
         self.data_rx.try_recv().ok()
     }
@@ -120,20 +106,17 @@ fn preview_worker(command_rx: Receiver<PreviewCommand>, data_tx: Sender<PreviewD
                         current_data = Some(PreviewData {
                             length: Some(length),
                             started_playing: Instant::now(),
-                            current_file: Some(path),
                         });
 
                         let _ = stream_tx.send(StreamCommand::Start);
+                        is_playing = true;
                     }
                     Err(e) => {
-                        eprintln!("Failed to load audio file: {}", e);
+                        error!("Failed to load audio file: {}", e);
                         current_data = None;
+                        is_playing = false;
                     }
                 }
-            }
-            Ok(PreviewCommand::Stop) => {
-                let _ = stream_tx.send(StreamCommand::Stop);
-                current_data = None;
             }
             Ok(PreviewCommand::Shutdown) => break,
             Err(TryRecvError::Empty) => {}            // No commands

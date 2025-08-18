@@ -7,7 +7,7 @@ use blerp::processing::effects::scale::ScaleEffect;
 use eframe::egui;
 use egui::scroll_area::ScrollSource;
 use egui::{
-    Align, Align2, Color32, CursorIcon, Frame, Id, InputState, Layout, Rect, Response, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2, Widget, hex_color, pos2, scroll_area::ScrollBarVisibility, vec2,
+    hex_color, pos2, scroll_area::ScrollBarVisibility, vec2, Align, Align2, Color32, CursorIcon, Frame, Id, InputState, Layout, Rect, Response, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2, Widget,
 };
 use graph::{Graph, Node, NodeData, NodeId};
 use itertools::Itertools;
@@ -48,7 +48,7 @@ mod graph {
 
 mod playlist {
     use cpal::Sample;
-    use egui::{Vec2, vec2};
+    use egui::{vec2, Vec2};
     use itertools::Itertools;
     use rodio::{Decoder, Source};
     use std::{fs::File, io::BufReader, path::PathBuf, time::Duration};
