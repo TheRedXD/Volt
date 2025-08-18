@@ -1,23 +1,34 @@
 #![warn(clippy::pedantic, clippy::nursery, clippy::allow_attributes_without_reason, clippy::undocumented_unsafe_blocks, clippy::clone_on_ref_ptr)]
+use crate::visual::browser::BrowserError;
+use eframe::{egui, run_native, App, CreationContext, NativeOptions};
+use egui::{hex_color, CentralPanel, Context, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, Shadow, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder};
+use egui_extras::install_image_loaders;
+use human_panic::setup_panic;
+use image::{ImageFormat, ImageReader};
+use info::handle_args;
 use std::{
     io::{BufReader, Cursor},
     rc::Rc,
     time::{Duration, Instant},
 };
-
-use eframe::{App, CreationContext, NativeOptions, egui, run_native};
-use egui::{CentralPanel, Context, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, Shadow, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder, hex_color};
-use egui_extras::install_image_loaders;
-use human_panic::setup_panic;
-use image::{ImageFormat, ImageReader};
-use info::handle_args;
+use strum::Display;
+use tap::{Pipe, Tap};
+use thiserror::Error;
+use tracing::error;
+use visual::{browser::Browser, central::Central, navbar::navbar, notification::NotificationDrawer, status::status, ThemeColors};
 // TODO: Move everything into components (visual)
+
+mod audio;
 mod info;
 mod timings;
 mod visual;
 
-use tap::{Pipe, Tap};
-use visual::{ThemeColors, browser::Browser, central::Central, navbar::navbar, notification::NotificationDrawer, status::status};
+#[derive(Debug, Error, Display)]
+enum VoltAppError {
+    BrowserError(#[from] BrowserError),
+}
+
+type VoltAppResult<T> = Result<T, VoltAppError>;
 
 fn main() -> eframe::Result {
     setup_panic!();
@@ -45,7 +56,7 @@ fn main() -> eframe::Result {
             ),
             ..Default::default()
         },
-        Box::new(|cc| Ok(Box::new(VoltApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(VoltApp::new(cc).unwrap()))),
     )
 }
 
@@ -65,7 +76,7 @@ struct VoltApp {
 }
 
 impl VoltApp {
-    fn new(cc: &CreationContext<'_>) -> Self {
+    fn new(cc: &CreationContext<'_>) -> VoltAppResult<Self> {
         const MONO_FONT_NAME: &str = "IBMPlexMono";
         const PROP_FONT_NAME: &str = "Inter";
         install_image_loaders(&cc.egui_ctx);
@@ -96,8 +107,8 @@ impl VoltApp {
             .into();
         });
         let theme = Rc::new(ThemeColors::default());
-        Self {
-            browser: Browser::new(Rc::clone(&theme)),
+        Ok(Self {
+            browser: Browser::new(Rc::clone(&theme))?,
             central: Central::new(),
             notification_drawer: NotificationDrawer::new(),
             theme,
@@ -109,7 +120,7 @@ impl VoltApp {
             timings_toggle: false,
             show_welcome: true,
             show_about: false,
-        }
+        })
     }
 }
 

@@ -1,7 +1,7 @@
 #![warn(clippy::nursery, clippy::pedantic, clippy::undocumented_unsafe_blocks, clippy::allow_attributes_without_reason)]
 // pub mod device;  // Commented out - unused legacy device implementation
-pub mod playback;
 pub mod processing;
+pub mod streaming;
 pub mod wavefile;
 
 pub mod utils {

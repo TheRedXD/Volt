@@ -1,4 +1,4 @@
-use crate::playback::error::PlaybackResult;
+use crate::streaming::error::StreamingResult;
 use cpal::{
     traits::{DeviceTrait, HostTrait},
     Device as CpalDevice,
@@ -9,6 +9,7 @@ pub struct DeviceManager {
     default_output: Option<usize>, // Position of the default output device in the devices vector
 }
 
+#[derive(Clone)]
 pub struct Device {
     pub name: String,
     pub cpal_device: CpalDevice,
@@ -20,7 +21,7 @@ impl DeviceManager {
     /// # Errors
     /// Returns an error if the system cannot enumerate audio devices or if
     /// there's an issue accessing the default audio host.
-    pub fn new() -> PlaybackResult<Self> {
+    pub fn new() -> StreamingResult<Self> {
         let host = cpal::default_host();
         let devices: Vec<Device> = host
             .output_devices()?
@@ -55,7 +56,7 @@ impl DeviceManager {
     ///
     /// # Errors
     /// Returns an error if the system cannot re-enumerate audio devices.
-    pub fn refresh_devices(&mut self) -> PlaybackResult<()> {
+    pub fn refresh_devices(&mut self) -> StreamingResult<()> {
         *self = Self::new()?;
 
         Ok(())

@@ -1,13 +1,24 @@
+use crate::{
+    audio::preview::{Preview, PreviewError},
+    visual::ThemeColors,
+};
 use blerp::utils::zip;
+use crossbeam_channel::{bounded, unbounded, Receiver, TryRecvError};
+use egui::{
+    emath::{self, TSTransform},
+    include_image, vec2, Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke,
+    Ui, UiBuilder, Vec2, Widget,
+};
 use itertools::Itertools;
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher, recommended_watcher};
+use notify::{recommended_watcher, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use open::that_detached;
 use rodio::{Decoder, OutputStreamBuilder, Sink, Source};
+use serde::de;
 use std::{
     borrow::Cow,
     collections::HashMap,
     f32::consts::FRAC_PI_2,
-    fs::{File, read_dir},
+    fs::{read_dir, File},
     io::BufReader,
     iter::Iterator,
     ops::BitOr,
@@ -18,23 +29,18 @@ use std::{
     sync::{Arc, RwLock},
     task::Poll,
     thread::spawn,
-    time::{Duration, Instant},
+    time::Instant,
 };
 use strum::Display;
 use tap::Pipe;
+use thiserror::Error;
 use tracing::{error, trace};
 use unicode_truncate::UnicodeTruncateStr;
 
-use egui::{
-    Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke, Ui, UiBuilder, Vec2,
-    Widget,
-    emath::{self, TSTransform},
-    include_image, vec2,
-};
-
-use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
-
-use crate::visual::ThemeColors;
+#[derive(Debug, Error, Display)]
+pub enum BrowserError {
+    PreviewError(#[from] PreviewError),
+}
 
 // https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#bit-twiddling
 macro_rules! count_tts {
@@ -89,53 +95,6 @@ pub enum EntryKind {
     File,
 }
 
-pub struct Preview {
-    pub path: Option<Arc<Path>>,
-    pub path_tx: Sender<Arc<Path>>,
-    pub file_data_rx: Receiver<PreviewData>,
-    pub file_data: Option<PreviewData>,
-}
-
-impl Preview {
-    pub fn play_file(&mut self, path: Arc<Path>) {
-        self.path = Some(Arc::clone(&path));
-        self.path_tx.send(path).unwrap();
-        self.file_data = None;
-    }
-
-    pub fn data(&mut self) -> Option<PreviewData> {
-        self.file_data = match self.file_data_rx.try_recv() {
-            Ok(data) => Some(data),
-            Err(_) => self.file_data,
-        };
-        if self.file_data.is_some_and(|data| data.length.is_some_and(|length| data.progress() > length)) {
-            self.path = None;
-            self.file_data = None;
-        }
-        self.file_data
-    }
-}
-
-#[derive(Clone, Copy)]
-pub struct PreviewData {
-    pub length: Option<Duration>,
-    pub started_playing: Instant,
-}
-
-impl PreviewData {
-    fn progress(&self) -> Duration {
-        self.started_playing.elapsed()
-    }
-
-    fn remaining(&self) -> Option<Duration> {
-        self.length.map(|length| length - self.progress())
-    }
-
-    fn percentage(&self) -> Option<f32> {
-        self.length.map(|length| self.progress().as_secs_f32() / length.as_secs_f32())
-    }
-}
-
 pub struct Browser {
     selected_category: Category,
     open_paths: Vec<PathBuf>,
@@ -172,49 +131,16 @@ impl<T> Default for FsWatcherCache<T> {
 impl Browser {
     const ENTRY_HEIGHT: f32 = 20.;
 
-    pub fn new(theme: Rc<ThemeColors>) -> Self {
-        Self {
+    pub fn new(theme: Rc<ThemeColors>) -> Result<Self, BrowserError> {
+        Ok(Self {
             selected_category: Category::Files,
             open_paths: vec![PathBuf::from_str("/").unwrap()],
             expanded_paths: Vec::new(),
-            preview: {
-                let (path_tx, path_rx) = unbounded();
-                let (file_data_tx, file_data_rx) = unbounded();
-                // FIXME: Temporary rodio playback, might need to use cpal or make rodio proper
-                spawn(move || {
-                    let stream = OutputStreamBuilder::open_default_stream().unwrap();
-                    let sink = Sink::connect_new(stream.mixer());
-                    let mut last_path = None;
-                    loop {
-                        let Ok(path) = path_rx.recv() else {
-                            break;
-                        };
-                        let source = Decoder::new(BufReader::new(File::open(&path).unwrap())).unwrap();
-                        let empty = sink.empty();
-                        sink.stop();
-                        if last_path.is_none_or(|last_path| last_path != path) || empty {
-                            file_data_tx
-                                .send(PreviewData {
-                                    length: source.total_duration(),
-                                    started_playing: Instant::now(),
-                                })
-                                .unwrap();
-                            sink.append(source);
-                        }
-                        last_path = Some(path);
-                    }
-                });
-                Preview {
-                    path_tx,
-                    file_data_rx,
-                    path: None,
-                    file_data: None,
-                }
-            },
+            preview: Preview::new()?,
             theme,
             cached_entries: FsWatcherCache::default(),
             cached_entry_kinds: Arc::new(RwLock::new(FsWatcherCache::default())),
-        }
+        })
     }
 
     fn entry_kind_of(path: impl AsRef<Path>, cached_entry_kinds: &mut FsWatcherCache<EntryKind>) -> EntryKind {
@@ -486,9 +412,11 @@ impl Browser {
         if response.clicked() {
             match kind {
                 EntryKind::Audio => {
-                    // TODO: Proper preview implementation with cpal. This is temporary (or at least make it work well with a proper preview widget)
-                    // Also, don't spawn a new thread - instead, dedicate a thread for preview
-                    self.preview.play_file(Arc::clone(&path));
+                    self.preview.current_preview_path = Some(path.to_path_buf());
+                    if let Err(e) = self.preview.play_file(path.to_path_buf()) {
+                        error!("Failed to play audio file: {}", e);
+                        self.preview.current_preview_path = None; // Clear on error
+                    }
                 }
                 EntryKind::File => {
                     that_detached(path.as_os_str()).unwrap();
@@ -509,20 +437,27 @@ impl Browser {
         let mut add_contents = |ui: &mut Ui| {
             ui.horizontal(|ui| {
                 ui.add(Image::new(include_image!("../images/icons/audio.png"))).union(ui.add(button(theme))).pipe(|response| {
-                    let data = self.preview.data();
-                    if let Some(data @ PreviewData { length: Some(length), .. }) = self.preview.path.as_ref().filter(|preview_path| ***preview_path == *path).zip(data).map(|(_, data)| data) {
-                        ui.ctx().request_repaint();
-                        response
-                            | ui.label(format!(
-                                "{:>02}:{:>02} of {:>02}:{:>02}",
-                                data.progress().as_secs() / 60,
-                                data.progress().as_secs() % 60,
-                                length.as_secs() / 60,
-                                length.as_secs() % 60
-                            ))
-                    } else {
-                        response
+                    let is_current_file = self.preview.current_preview_path.as_ref().map(|current| current == path).unwrap_or(false);
+                    if is_current_file {
+                        if let Some(data) = self.preview.get_data() {
+                            ui.ctx().request_repaint();
+
+                            let progress = data.started_playing.elapsed();
+                            if let Some(length) = data.length {
+                                return response
+                                    | ui.label(format!(
+                                        "{:>02}:{:>02} of {:>02}:{:>02}",
+                                        progress.as_secs() / 60,
+                                        progress.as_secs() % 60,
+                                        length.as_secs() / 60,
+                                        length.as_secs() % 60
+                                    ));
+                            } else {
+                                return response | ui.label(format!("Playing {:>02}:{:>02}", progress.as_secs() / 60, progress.as_secs() % 60));
+                            }
+                        }
                     }
+                    response
                 })
             })
         };

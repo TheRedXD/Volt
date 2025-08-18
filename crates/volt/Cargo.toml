@@ -7,6 +7,8 @@ rust-version = { workspace = true }
 [dependencies]
 cpal = { workspace = true }
 itertools = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
 eframe = { version = "0.32.0", features = ["wgpu"] }
 egui = { version = "0.32.0", features = ["color-hex"] }
 egui_extras = { version = "0.32.0", features = ["all_loaders"] }
@@ -20,7 +22,6 @@ strum = { version = "0.27.2", features = ["derive"] }
 tap = "1.0.1"
 blerp = { path = "../blerp" }
 human-panic = "2.0.2"
-tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 notify = { version = "8.0.0", features = ["crossbeam-channel"] }
 crossbeam-channel = "0.5.14"

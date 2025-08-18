@@ -1,7 +1,7 @@
 use super::{
     buffer::SampleBuffer,
     device::Device,
-    error::{PlaybackError, PlaybackResult},
+    error::{StreamingError, StreamingResult},
 };
 use cpal::{
     traits::{DeviceTrait, StreamTrait},
@@ -90,7 +90,7 @@ impl AudioStream {
     /// # Errors
     /// Returns an error if the device doesn't support the requested configuration
     /// or if there's an issue setting up the audio stream.
-    pub fn new(device: Device, buffer: Arc<SampleBuffer>, sample_rate: u32, buffer_size: usize) -> PlaybackResult<(Self, Sender<StreamCommand>)> {
+    pub fn new(device: Device, buffer: Arc<SampleBuffer>, sample_rate: u32, buffer_size: usize) -> StreamingResult<(Self, Sender<StreamCommand>)> {
         let (command_tx, command_rx) = crossbeam_channel::unbounded();
 
         // Get optimal configuration for the device
@@ -123,7 +123,7 @@ impl AudioStream {
     ///
     /// # Errors
     /// Returns an error if the audio stream cannot be created or started.
-    pub fn start(&mut self) -> PlaybackResult<()> {
+    pub fn start(&mut self) -> StreamingResult<()> {
         let mut state = self.state.lock();
         if *state == StreamState::Running {
             debug!("Stream already running");
@@ -139,7 +139,7 @@ impl AudioStream {
         let stream = self.create_cpal_stream()?;
 
         // Start the stream
-        stream.play().map_err(PlaybackError::PlayStream)?;
+        stream.play().map_err(StreamingError::PlayStream)?;
 
         self.stream = Some(stream);
         self.is_running.store(true, Ordering::SeqCst);
@@ -155,7 +155,7 @@ impl AudioStream {
     /// # Errors
     /// Returns an error if there's an issue stopping the audio stream,
     /// though this is unlikely in practice.
-    pub fn stop(&mut self) -> PlaybackResult<()> {
+    pub fn stop(&mut self) -> StreamingResult<()> {
         let mut state = self.state.lock();
         if *state == StreamState::Stopped {
             debug!("Stream already stopped");
@@ -185,7 +185,7 @@ impl AudioStream {
     /// # Errors
     /// Returns an error if there's an issue processing a command (e.g., starting or stopping the stream).
     /// Returns `Ok(false)` when the stream should be shut down.
-    pub fn process_commands(&mut self) -> PlaybackResult<bool> {
+    pub fn process_commands(&mut self) -> StreamingResult<bool> {
         match self.command_rx.try_recv() {
             Ok(command) => {
                 match command {
@@ -235,7 +235,7 @@ impl AudioStream {
     /// # Errors
     /// Returns an error if the new configuration is not supported by the device
     /// or if there's an issue restarting the stream with the new configuration.
-    pub fn update_config(&mut self, config: StreamConfig) -> PlaybackResult<()> {
+    pub fn update_config(&mut self, config: StreamConfig) -> StreamingResult<()> {
         let was_running = self.is_running.load(Ordering::SeqCst);
 
         if was_running {
@@ -277,8 +277,8 @@ impl AudioStream {
     }
 
     /// Get optimal configuration for the device
-    fn get_optimal_config(device: &Device, target_sample_rate: u32, target_channels: usize) -> PlaybackResult<StreamConfig> {
-        let supported_configs = device.cpal_device.supported_output_configs().map_err(PlaybackError::SupportedConfigs)?;
+    fn get_optimal_config(device: &Device, target_sample_rate: u32, target_channels: usize) -> StreamingResult<StreamConfig> {
+        let supported_configs = device.cpal_device.supported_output_configs().map_err(StreamingError::SupportedConfigs)?;
 
         // Find the best matching configuration
         let mut best_config = None;
@@ -329,7 +329,7 @@ impl AudioStream {
             }
         }
 
-        let (config_range, sample_rate) = best_config.ok_or(PlaybackError::UnsupportedFormat)?;
+        let (config_range, sample_rate) = best_config.ok_or(StreamingError::UnsupportedFormat)?;
 
         let config = StreamConfig {
             channels: config_range.channels(),
@@ -348,7 +348,7 @@ impl AudioStream {
     }
 
     /// Create the actual CPAL stream
-    fn create_cpal_stream(&self) -> PlaybackResult<Stream> {
+    fn create_cpal_stream(&self) -> StreamingResult<Stream> {
         let buffer = self.buffer.clone();
         let volume = self.volume.clone();
         let stats = self.stats.clone();
@@ -410,7 +410,7 @@ impl AudioStream {
             .device
             .cpal_device
             .build_output_stream(&self.config, callback, error_callback, None)
-            .map_err(PlaybackError::BuildStream)?;
+            .map_err(StreamingError::BuildStream)?;
 
         Ok(stream)
     }

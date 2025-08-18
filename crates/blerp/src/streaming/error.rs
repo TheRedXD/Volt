@@ -3,19 +3,19 @@ use std::io;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum PlaybackError {
+pub enum StreamingError {
     #[error("Audio device error: {0}")]
     Device(#[from] DevicesError),
 
     #[error("Audio stream error: {0}")]
     Stream(#[from] StreamError),
-    
+
     #[error("Failed to build audio stream: {0}")]
     BuildStream(#[from] BuildStreamError),
-    
+
     #[error("Failed to play audio stream: {0}")]
     PlayStream(#[from] PlayStreamError),
-    
+
     #[error("Failed to get supported stream configs: {0}")]
     SupportedConfigs(#[from] SupportedStreamConfigsError),
 
@@ -35,4 +35,4 @@ pub enum PlaybackError {
     Processing(String),
 }
 
-pub type PlaybackResult<T> = Result<T, PlaybackError>;
+pub type StreamingResult<T> = Result<T, StreamingError>;
