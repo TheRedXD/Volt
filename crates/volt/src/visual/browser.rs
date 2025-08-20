@@ -1,5 +1,5 @@
 use crate::{
-    audio::preview::{Preview, PreviewError},
+    audio::preview::{self, Preview, PreviewData, PreviewError},
     visual::ThemeColors,
 };
 use blerp::utils::zip;
@@ -408,10 +408,15 @@ impl Browser {
         if response.clicked() {
             match kind {
                 EntryKind::Audio => {
-                    self.preview.current_preview_path = Some(path.to_path_buf());
-                    if let Err(e) = self.preview.play_file(path.to_path_buf()) {
-                        error!("Failed to play audio file: {}", e);
-                        self.preview.current_preview_path = None; // Clear on error
+                    if let Some(_) = self.preview.data() {
+                        if let Err(e) = self.preview.stop() {
+                            error!("Failed to stop audio preview: {}", e);
+                        }
+                    } else {
+                        if let Err(e) = self.preview.play_file(path.to_path_buf()) {
+                            error!("Failed to play audio file: {}", e);
+                            self.preview.clear_data();
+                        }
                     }
                 }
                 EntryKind::File => {
@@ -433,26 +438,28 @@ impl Browser {
         let mut add_contents = |ui: &mut Ui| {
             ui.horizontal(|ui| {
                 ui.add(Image::new(include_image!("../images/icons/audio.png"))).union(ui.add(button(theme))).pipe(|response| {
-                    let is_current_file = self.preview.current_preview_path.as_ref().map(|current| current == path).unwrap_or(false);
-                    if is_current_file {
-                        if let Some(data) = self.preview.get_data() {
-                            ui.ctx().request_repaint();
+                    ui.ctx().request_repaint();
 
-                            let progress = data.started_playing.elapsed();
-                            if let Some(length) = data.length {
-                                return response
-                                    | ui.label(format!(
-                                        "{:>02}:{:>02} of {:>02}:{:>02}",
-                                        progress.as_secs() / 60,
-                                        progress.as_secs() % 60,
-                                        length.as_secs() / 60,
-                                        length.as_secs() % 60
-                                    ));
-                            } else {
-                                return response | ui.label(format!("Playing {:>02}:{:>02}", progress.as_secs() / 60, progress.as_secs() % 60));
-                            }
-                        }
+                    let Some(current_data) = self.preview.data() else {
+                        return response;
+                    };
+                    let Some(length) = current_data.length else {
+                        return response;
+                    };
+
+                    let is_being_previewed = current_data.path.as_ref().map(|current_path| **current_path == path).unwrap_or(false);
+
+                    if is_being_previewed {
+                        return response
+                            | ui.label(format!(
+                                "{:>02}:{:>02} of {:>02}:{:>02}",
+                                current_data.progress().as_secs() / 60,
+                                current_data.progress().as_secs() % 60,
+                                length.as_secs() / 60,
+                                length.as_secs() % 60
+                            ));
                     }
+
                     response
                 })
             })

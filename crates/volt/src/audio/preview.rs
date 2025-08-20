@@ -5,7 +5,7 @@ use blerp::{
 };
 use crossbeam_channel::{unbounded, Receiver, Sender, TryRecvError};
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -13,7 +13,7 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
-use tracing::error;
+use tracing::{error, info};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PreviewError {
@@ -30,6 +30,7 @@ pub type PreviewResult<T> = Result<T, PreviewError>;
 #[derive(Debug, Clone)]
 pub enum PreviewCommand {
     PlayFile(PathBuf),
+    Stop,
     Shutdown,
 }
 
@@ -37,13 +38,28 @@ pub enum PreviewCommand {
 pub struct PreviewData {
     pub length: Option<Duration>,
     pub started_playing: Instant,
+    pub path: Option<Arc<PathBuf>>,
+}
+
+impl PreviewData {
+    pub fn progress(&self) -> Duration {
+        self.started_playing.elapsed()
+    }
+
+    pub fn remaining(&self) -> Option<Duration> {
+        self.length.map(|length| length - self.progress())
+    }
+
+    pub fn percentage(&self) -> Option<f32> {
+        self.length.map(|length| self.progress().as_secs_f32() / length.as_secs_f32())
+    }
 }
 
 pub struct Preview {
     command_tx: Sender<PreviewCommand>,
-    data_rx: Receiver<PreviewData>,
+    data_rx: Receiver<Option<PreviewData>>,
     _worker_thread: JoinHandle<()>,
-    pub current_preview_path: Option<PathBuf>,
+    data: Option<PreviewData>,
     is_running: Arc<AtomicBool>,
 }
 
@@ -66,7 +82,7 @@ impl Preview {
             command_tx,
             data_rx,
             _worker_thread: worker_thread,
-            current_preview_path: None,
+            data: None,
             is_running,
         })
     }
@@ -75,8 +91,26 @@ impl Preview {
         self.command_tx.send(PreviewCommand::PlayFile(path)).map_err(|_| PreviewError::NotInitialized)
     }
 
-    pub fn get_data(&self) -> Option<PreviewData> {
-        self.data_rx.try_recv().ok()
+    pub fn stop(&mut self) -> Result<(), PreviewError> {
+        self.data = None;
+        self.command_tx.send(PreviewCommand::Stop).map_err(|_| PreviewError::NotInitialized)
+    }
+
+    pub fn data(&mut self) -> Option<&PreviewData> {
+        self.data = match self.data_rx.try_recv() {
+            Ok(data) => data,
+            Err(_) => self.data.clone(),
+        };
+
+        self.data.as_ref()
+    }
+
+    pub fn clear_data(&mut self) {
+        self.data = None
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.data.is_some()
     }
 }
 
@@ -87,57 +121,48 @@ impl Drop for Preview {
     }
 }
 
-fn preview_worker(command_rx: Receiver<PreviewCommand>, data_tx: Sender<PreviewData>, is_running: Arc<AtomicBool>) -> PreviewResult<()> {
+fn preview_worker(command_rx: Receiver<PreviewCommand>, data_tx: Sender<Option<PreviewData>>, is_running: Arc<AtomicBool>) -> PreviewResult<()> {
     let device_manager = DeviceManager::new()?;
     let device = device_manager.get_default_device().ok_or_else(|| PreviewError::File("No audio device available".to_string()))?.clone();
 
     let buffer = Arc::new(SampleBuffer::new(44100 * 60, Channel::Stereo));
     let (mut audio_stream, stream_tx) = AudioStream::new(device, buffer.clone(), 44100, 512)?;
 
-    let mut current_data: Option<PreviewData> = None;
-    let mut is_playing = false;
+    let mut current_data = None;
     while is_running.load(Ordering::SeqCst) {
         match command_rx.try_recv() {
-            Ok(PreviewCommand::PlayFile(path)) => {
-                let _ = stream_tx.send(StreamCommand::Stop);
-
-                match load_audio_file(&path, buffer.clone()) {
-                    Ok(length) => {
-                        current_data = Some(PreviewData {
-                            length: Some(length),
-                            started_playing: Instant::now(),
-                        });
-
-                        let _ = stream_tx.send(StreamCommand::Start);
-                        is_playing = true;
-                    }
-                    Err(e) => {
-                        error!("Failed to load audio file: {}", e);
-                        current_data = None;
-                        is_playing = false;
-                    }
+            Ok(PreviewCommand::PlayFile(path)) => match load_audio_file(&path, buffer.clone()) {
+                Ok(length) => {
+                    current_data = Some(PreviewData {
+                        length: Some(length),
+                        started_playing: Instant::now(),
+                        path: Some(Arc::new(path)),
+                    });
+                    let _ = stream_tx.send(StreamCommand::Start);
+                    let _ = data_tx.send(current_data.clone());
                 }
-            }
+                Err(e) => {
+                    error!("Failed to load audio file: {}", e);
+                    current_data = None;
+                    let _ = data_tx.send(None);
+                }
+            },
             Ok(PreviewCommand::Shutdown) => break,
+            Ok(PreviewCommand::Stop) => {
+                let _ = stream_tx.send(StreamCommand::Stop);
+            }
             Err(TryRecvError::Empty) => {}            // No commands
             Err(TryRecvError::Disconnected) => break, // Channel closed
         }
 
-        if is_playing && current_data.is_some() {
-            let data = current_data.as_ref().unwrap();
-            if let Some(length) = data.length {
-                let elapsed = data.started_playing.elapsed();
-                if elapsed >= length {
-                    // Audio has finished playing
-                    let _ = stream_tx.send(StreamCommand::Stop);
-                    current_data = None;
-                    is_playing = false;
-                }
+        if let Some(ref data) = current_data
+            && let Some(length) = data.length
+        {
+            let elapsed = data.started_playing.elapsed();
+            if elapsed >= length {
+                let _ = stream_tx.send(StreamCommand::Stop);
+                let _ = data_tx.send(None);
             }
-        }
-
-        if is_playing && let Some(ref data) = current_data {
-            let _ = data_tx.send(data.clone());
         }
 
         if let Err(_) = audio_stream.process_commands() {
