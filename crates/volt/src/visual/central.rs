@@ -9,9 +9,11 @@ use egui::scroll_area::ScrollSource;
 use egui::{
     Align, Align2, Color32, CursorIcon, Frame, Id, InputState, Layout, Rect, Response, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2, Widget, hex_color, pos2, scroll_area::ScrollBarVisibility, vec2,
 };
+use egui::{Area, LayerId, Order};
 use graph::{Graph, Node, NodeData, NodeId};
 use itertools::Itertools;
 use playlist::{Clip, ClipData, Playlist, Time};
+use tap::Tap;
 
 use super::ThemeColors;
 
@@ -136,7 +138,7 @@ mod playlist {
             blerp::read::<f64, _>(File::open(&path).unwrap()).unwrap().map(move |track| {
                 let Track { channels, sample_rate } = track.unwrap();
                 #[allow(clippy::cast_precision_loss, reason = "this is a duration")]
-                let length = Duration::from_secs_f64(channels.iter().map(|c| c.samples.len()).max().unwrap_or(0) as f64 / f64::from(sample_rate.unwrap_or(44100)));
+                let length = Duration::from_secs_f64(channels.iter().map(|channel| channel.samples.len()).max().unwrap_or(0) as f64 / f64::from(sample_rate.unwrap_or(44100)));
                 Self::Audio {
                     path: Arc::clone(&path),
                     channels,
@@ -287,7 +289,7 @@ impl Central {
                             .rev()
                             .map(|y| {
                                 Frame::default()
-                                    .fill(ThemeColors::default().central_background)
+                                    .fill(hex_color!("1f212d"))
                                     .show(ui, |ui| {
                                         let (response, painter) = ui.allocate_painter(vec2(f32::INFINITY, playlist.zoom.y), Sense::hover());
                                         if let Some(path) = response.dnd_release_payload::<PathBuf>()
@@ -316,7 +318,9 @@ impl Central {
                                                 Align2::LEFT_TOP,
                                                 Color32::BLUE,
                                                 match data {
-                                                    ClipData::Audio { path, .. } => path.file_name().unwrap().to_string_lossy(),
+                                                    ClipData::Audio { path, channels, length } => {
+                                                        format!("{} ({} ch, {:?})", path.file_name().unwrap().display(), channels.len(), length)
+                                                    }
                                                     ClipData::Midi { .. } => "<midi data>".into(),
                                                 },
                                             );
@@ -432,11 +436,25 @@ impl Central {
 
 impl Widget for &mut Central {
     fn ui(self, ui: &mut Ui) -> Response {
-        Frame::default()
+        let response = Frame::default()
             .show(ui, |ui| match &mut self.mode {
                 Mode::Playlist => Central::add_playlist(ui, &mut self.playlist),
                 Mode::Graph => Central::add_graph(ui, &mut self.graph),
             })
-            .response
+            .response;
+        if let Some(path) = response.dnd_release_payload::<PathBuf>()
+            && let Some(start) = Time::from_beats(
+                f64::from((ui.input(|input| input.pointer.latest_pos().unwrap().x) - response.rect.min.x) / self.playlist.zoom.x) * f64::from(self.playlist.time_signature.beats_per_measure),
+            )
+        {
+            for data in ClipData::from_path((*path).clone().into()) {
+                self.playlist.clips.push(Clip {
+                    start,
+                    track: self.playlist.clips.iter().map(|clip| clip.track).max().unwrap_or(0),
+                    data,
+                });
+            }
+        }
+        response
     }
 }

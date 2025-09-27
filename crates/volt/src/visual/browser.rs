@@ -29,10 +29,10 @@ use tracing::{error, trace};
 use unicode_truncate::UnicodeTruncateStr;
 
 use egui::{
-    Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke, Ui, UiBuilder, Vec2,
-    Widget,
+    Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Rect, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke, Ui, UiBuilder,
+    Vec2, Widget,
     emath::{self, TSTransform},
-    include_image, vec2,
+    hex_color, include_image, vec2,
 };
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
@@ -111,7 +111,7 @@ impl Preview {
             Ok(data) => Some(data),
             Err(_) => self.file_data,
         };
-        if self.file_data.is_some_and(|data| data.length.is_some_and(|length| data.progress() > length)) {
+        if self.file_data.is_some_and(|data| data.progress() > data.length) {
             self.path = None;
             self.file_data = None;
         }
@@ -121,7 +121,7 @@ impl Preview {
 
 #[derive(Clone, Copy)]
 pub struct PreviewData {
-    pub length: Option<Duration>,
+    pub length: Duration,
     pub started_playing: Instant,
 }
 
@@ -130,12 +130,13 @@ impl PreviewData {
         self.started_playing.elapsed()
     }
 
-    fn remaining(&self) -> Option<Duration> {
-        self.length.map(|length| length - self.progress())
+    fn remaining(&self) -> Duration {
+        self.length - self.progress()
     }
 
-    fn percentage(&self) -> Option<f32> {
-        self.length.map(|length| self.progress().as_secs_f32() / length.as_secs_f32())
+    /// Return a value between 0 and 1 representing how much of the audio has played.
+    fn percentage(&self) -> f32 {
+        self.progress().as_secs_f32() / self.length.as_secs_f32()
     }
 }
 
@@ -175,6 +176,8 @@ impl<T> Default for FsWatcherCache<T> {
 impl Browser {
     const ENTRY_HEIGHT: f32 = 20.;
 
+    // TODO move some of this to blerp
+    #[allow(clippy::too_many_lines)]
     pub fn new(theme: Rc<ThemeColors>) -> Self {
         Self {
             selected_category: Category::Files,
@@ -188,24 +191,28 @@ impl Browser {
                     let (samples_tx, samples_rx) = unbounded::<[f32; 2]>();
                     let config = device.default_output_config().unwrap();
                     let device_sample_rate = config.sample_rate().0;
-                    let stream = device
-                        .build_output_stream(
-                            &config.config(),
-                            move |data, _| {
-                                for sample in data.chunks_mut(config.channels() as usize) {
-                                    sample.copy_from_slice(&match samples_rx.try_recv() {
-                                        Ok(sample) => sample,
-                                        Err(TryRecvError::Empty) => [0., 0.],
-                                        Err(TryRecvError::Disconnected) => {
-                                            panic!()
-                                        }
-                                    });
-                                }
-                            },
-                            |_| {},
-                            None,
-                        )
-                        .unwrap();
+
+                    let stream = {
+                        let samples_rx = samples_rx.clone();
+                        device
+                            .build_output_stream(
+                                &config.config(),
+                                move |data, _| {
+                                    for sample in data.chunks_mut(config.channels() as usize) {
+                                        sample.copy_from_slice(&match samples_rx.try_recv() {
+                                            Ok(sample) => sample,
+                                            Err(TryRecvError::Empty) => [0., 0.],
+                                            Err(TryRecvError::Disconnected) => {
+                                                panic!()
+                                            }
+                                        });
+                                    }
+                                },
+                                |_| {},
+                                None,
+                            )
+                            .unwrap()
+                    };
                     stream.play().unwrap();
 
                     let mut last_path = None;
@@ -213,12 +220,23 @@ impl Browser {
                         let Ok(path) = path_rx.recv() else {
                             break;
                         };
+                        samples_rx.try_iter().for_each(drop);
+                        if last_path.as_ref().is_some_and(|last_path| last_path == &path) {
+                            last_path = None;
+                            continue;
+                        }
                         let tracks = blerp::read(File::open(&path).unwrap()).unwrap();
+                        let mut longest = None;
                         for track in tracks {
                             let Track {
                                 channels,
                                 sample_rate: track_sample_rate,
                             } = track.unwrap();
+                            #[allow(clippy::cast_precision_loss, reason = "this is a duration")]
+                            let length = Duration::from_secs_f64(channels.iter().map(|channel| channel.samples.len()).max().unwrap_or(0) as f64 / f64::from(track_sample_rate.unwrap_or(44100)));
+                            if longest.is_none_or(|longest| length > longest) {
+                                longest = Some(length);
+                            }
                             let mut channels = channels.into_iter().map(|channel| channel.samples.into_iter()).collect_vec();
                             while let Some(sample) = channels
                                 .iter_mut()
@@ -256,7 +274,7 @@ impl Browser {
                         if last_path.is_none_or(|last_path| last_path != path) {
                             file_data_tx
                                 .send(PreviewData {
-                                    length: None,
+                                    length: longest.unwrap_or_default(),
                                     started_playing: Instant::now(),
                                 })
                                 .unwrap();
@@ -546,8 +564,6 @@ impl Browser {
         if response.clicked() {
             match kind {
                 EntryKind::Audio => {
-                    // TODO: Proper preview implementation with cpal. This is temporary (or at least make it work well with a proper preview widget)
-                    // Also, don't spawn a new thread - instead, dedicate a thread for preview
                     self.preview.play_file(Arc::clone(&path));
                 }
                 EntryKind::File => {
@@ -570,7 +586,7 @@ impl Browser {
             ui.horizontal(|ui| {
                 ui.add(Image::new(include_image!("../images/icons/audio.png"))).union(ui.add(button(theme))).pipe(|response| {
                     let data = self.preview.data();
-                    if let Some(data @ PreviewData { length: Some(length), .. }) = self.preview.path.as_ref().filter(|preview_path| ***preview_path == *path).zip(data).map(|(_, data)| data) {
+                    if let Some(data @ PreviewData { length, .. }) = self.preview.path.as_ref().filter(|preview_path| ***preview_path == *path).zip(data).map(|(_, data)| data) {
                         ui.ctx().request_repaint();
                         response
                             | ui.label(format!(
@@ -600,6 +616,16 @@ impl Browser {
             let dnd_response = ui.interact(response.rect, Id::new(path.to_owned()), Sense::click_and_drag()).on_hover_cursor(CursorIcon::Grab);
             dnd_response | response
         };
+        if let Some(data) = self.preview.data()
+        && self.preview.path.as_ref().is_some_and(|previewing| **previewing == *path)
+        {
+            ui.ctx().request_repaint();
+            ui.painter().rect_filled(
+                response.rect.with_max_x(response.rect.width().mul_add(data.percentage(), response.rect.left())),
+                0,
+                hex_color!("#ffffff20"),
+            );
+        }
         response.layer_id = ui.layer_id();
         response
     }

@@ -6,7 +6,7 @@ use std::{
 };
 
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
-use egui::{CentralPanel, Context, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, Shadow, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder, hex_color};
+use egui::{hex_color, Area, CentralPanel, Context, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, Shadow, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder};
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;
 use image::{ImageFormat, ImageReader};
@@ -431,7 +431,7 @@ impl App for VoltApp {
             }
         }
 
-        egui::Area::new("center_area".into()).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).show(ctx, |ui| {
+        Area::new("center_area".into()).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).show(ctx, |ui| {
             if self.show_welcome {
                 egui::Frame::new()
                     .fill(self.theme.central_background)
@@ -475,7 +475,7 @@ impl App for VoltApp {
             ui.add(&mut self.central);
         });
 
-        egui::Area::new("notifications_area".into())
+        Area::new("notifications_area".into())
             .anchor(egui::Align2::RIGHT_BOTTOM, egui::Vec2::new(ctx.screen_rect().max.x, ctx.screen_rect().max.y))
             .show(ctx, |ui| {
                 egui::Frame {
