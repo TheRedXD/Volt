@@ -7,9 +7,9 @@ rust-version = { workspace = true }
 [dependencies]
 cpal = { workspace = true }
 itertools = { workspace = true }
-eframe = { version = "0.32.0", features = ["wgpu"] }
-egui = { version = "0.32.0", features = ["color-hex"] }
-egui_extras = { version = "0.32.0", features = ["all_loaders"] }
+eframe = { version = "0.32.3", features = ["wgpu"] }
+egui = { version = "0.32.3", features = ["color-hex"] }
+egui_extras = { version = "0.32.3", features = ["all_loaders"] }
 egui_plot = "0.33.0"
 image = { version = "0.25.5", features = ["jpeg", "png"] }
 open = "5.3.2"
@@ -20,11 +20,13 @@ tap = "1.0.1"
 blerp = { path = "../blerp" }
 human-panic = "2.0.2"
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 notify = { version = "8.0.0", features = ["crossbeam-channel"] }
 crossbeam-channel = "0.5.14"
 pastey = "0.1.1"
 unicode-truncate = "2.0.0"
 symphonia = { version = "0.5.4", features = ["all"] }
+
 # TEMPORARY FIX: Fix some platform support
-wgpu = "25"
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu = "26.0.1"
