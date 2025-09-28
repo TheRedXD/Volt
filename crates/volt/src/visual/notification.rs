@@ -71,9 +71,9 @@ impl egui::Widget for &mut NotificationDrawer {
                 let mut opacity = if age <= fade_duration {
                     age.as_secs_f32() / fade_duration.as_secs_f32()
                 } else if let Some(lifetime) = notification.duration
-                    && lifetime - age <= fade_duration
+                    && lifetime.checked_sub(age).unwrap_or_default() <= fade_duration
                 {
-                    (lifetime - age).as_secs_f32() / fade_duration.as_secs_f32()
+                    lifetime.checked_sub(age).unwrap_or_default().as_secs_f32() / fade_duration.as_secs_f32()
                 } else {
                     1.0
                 };
