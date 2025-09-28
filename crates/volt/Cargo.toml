@@ -26,3 +26,5 @@ crossbeam-channel = "0.5.14"
 pastey = "0.1.1"
 unicode-truncate = "2.0.0"
 symphonia = { version = "0.5.4", features = ["all"] }
+# TEMPORARY FIX: Fix some platform support
+wgpu = "25"
