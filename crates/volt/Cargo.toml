@@ -29,4 +29,4 @@ symphonia = { version = "0.5.4", features = ["all"] }
 
 # TEMPORARY FIX: Fix some platform support
 [target.'cfg(target_os = "linux")'.dependencies]
-wgpu = "26.0.1"
+wgpu = "25"
