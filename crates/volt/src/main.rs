@@ -6,7 +6,9 @@ use std::{
 };
 
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
-use egui::{hex_color, Area, CentralPanel, Context, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, Shadow, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder};
+use egui::{
+    Area, CentralPanel, Context, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, Shadow, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder, hex_color,
+};
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;
 use image::{ImageFormat, ImageReader};
@@ -137,12 +139,12 @@ impl App for VoltApp {
                 }
                 "info" => {
                     info::dump();
-                    self.notification_drawer.make("Dumped system info into console!".into(), Some(Duration::from_secs(5)));
+                    self.notification_drawer.notify("Dumped system info into console!".into(), Some(Duration::from_secs(5)));
                 }
                 "bug" => {
                     println!("!!!!!!\nWhen making your bug report, add the information below!\n!!!!!!");
                     info::dump();
-                    self.notification_drawer.make(
+                    self.notification_drawer.notify(
                         "Dumped system info into console! You'll be redirected to the official Volt bug report page in ~3 seconds.".into(),
                         Some(Duration::from_secs(5)),
                     );
@@ -476,19 +478,11 @@ impl App for VoltApp {
         });
 
         Area::new("notifications_area".into())
-            .anchor(egui::Align2::RIGHT_BOTTOM, egui::Vec2::new(ctx.screen_rect().max.x, ctx.screen_rect().max.y))
+            .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::ZERO)
+            .interactable(false)
+            .default_size(ctx.screen_rect().size())
             .show(ctx, |ui| {
-                egui::Frame {
-                    inner_margin: egui::Margin::same(0),
-                    outer_margin: egui::Margin::same(0),
-                    corner_radius: egui::CornerRadius::same(0),
-                    shadow: Shadow::NONE,
-                    fill: egui::Color32::TRANSPARENT,
-                    stroke: egui::Stroke::NONE,
-                }
-                .show(ui, |ui| {
-                    ui.add(&mut self.notification_drawer);
-                });
+                ui.add(&mut self.notification_drawer);
             });
         timings::set_render_time(time_render_start.elapsed());
 
