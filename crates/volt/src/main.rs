@@ -8,7 +8,7 @@ use std::{
 
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
 use egui::{
-    hex_color, Align2, Area, CentralPanel, Context, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder
+    Align2, Area, CentralPanel, Context, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder
 };
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;

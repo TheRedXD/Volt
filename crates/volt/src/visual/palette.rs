@@ -1,13 +1,13 @@
-use std::{cmp::Ordering, iter::repeat_n, rc::Rc, sync::mpsc::Sender, time::Duration};
+use std::{iter::repeat_n, rc::Rc, sync::mpsc::Sender, time::Duration};
 
-use egui::{Align, Color32, FontFamily, FontId, Frame, Id, Key, KeyboardShortcut, Layout, Modifiers, Stroke, TextEdit, TextStyle, Ui, hex_color};
+use egui::{Align, Color32, FontFamily, FontId, Frame, Id, Key, KeyboardShortcut, Layout, Modifiers, Stroke, TextEdit, Ui, hex_color};
 use strsim::damerau_levenshtein;
 
 use crate::{
     info,
     visual::{
         ThemeColors,
-        notification::{Notification, NotificationDrawer},
+        notification::Notification,
     },
 };
 

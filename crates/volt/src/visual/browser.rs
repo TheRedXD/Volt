@@ -29,7 +29,7 @@ use tracing::{error, trace};
 use unicode_truncate::UnicodeTruncateStr;
 
 use egui::{
-    Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Rect, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke, Ui, UiBuilder,
+    Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke, Ui, UiBuilder,
     Vec2, Widget,
     emath::{self, TSTransform},
     hex_color, include_image, vec2,

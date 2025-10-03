@@ -9,13 +9,10 @@ use egui::scroll_area::ScrollSource;
 use egui::{
     Align, Align2, Color32, CursorIcon, Frame, Id, InputState, Layout, Rect, Response, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2, Widget, hex_color, pos2, scroll_area::ScrollBarVisibility, vec2,
 };
-use egui::{Area, LayerId, Order};
 use graph::{Graph, Node, NodeData, NodeId};
 use itertools::Itertools;
 use playlist::{Clip, ClipData, Playlist, Time};
-use tap::Tap;
 
-use super::ThemeColors;
 
 mod graph {
     use blerp::processing::effects::Effect;
