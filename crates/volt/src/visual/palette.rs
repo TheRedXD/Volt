@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, iter::repeat_n, rc::Rc, sync::mpsc::Sender, time::Duration};
 
-use egui::{Align, Color32, FontFamily, FontId, Frame, Key, KeyboardShortcut, Layout, Modifiers, Stroke, TextEdit, TextStyle, Ui, hex_color};
+use egui::{Align, Color32, FontFamily, FontId, Frame, Id, Key, KeyboardShortcut, Layout, Modifiers, Stroke, TextEdit, TextStyle, Ui, hex_color};
 use strsim::damerau_levenshtein;
 
 use crate::{
@@ -15,22 +15,25 @@ pub struct Palette {
     pub showing: bool,
     pub text: String,
     pub theme: Rc<ThemeColors>,
+    pub field_id: Id,
 }
 
 const COMMAND_PALETTE_SHORTCUT: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::P);
 
 impl Palette {
-    pub const fn new(theme: Rc<ThemeColors>) -> Self {
+    pub fn new(theme: Rc<ThemeColors>) -> Self {
         Self {
             showing: false,
             text: String::new(),
             theme,
+            field_id: Id::new("command_palette_text_field"),
         }
     }
 
     pub fn ui(&mut self, ui: &mut Ui, timings_toggle: &mut bool, notifications_tx: &Sender<Notification>) {
         if ui.ctx().input_mut(|i| i.consume_shortcut(&COMMAND_PALETTE_SHORTCUT)) {
             self.text.clear();
+            ui.ctx().memory_mut(|mem| mem.request_focus(self.field_id));
             self.showing = !self.showing;
         }
 
@@ -63,11 +66,16 @@ impl Palette {
             }),
         ];
 
-        commands.sort_unstable_by_key(|&(name, _)| damerau_levenshtein(&self.text.to_lowercase(), name));
+        commands.sort_unstable_by_key(|&(name, _)| {
+            (
+                usize::MAX - name.chars().zip(self.text.chars()).take_while(|(a, b)| a == b).count(),
+                damerau_levenshtein(&self.text.to_lowercase(), name),
+            )
+        });
 
         if ui.ctx().input_mut(|i| i.key_pressed(Key::Enter)) {
-            commands[0].1();
             self.showing = false;
+            commands[0].1();
         }
 
         if self.showing {
@@ -82,9 +90,9 @@ impl Palette {
                         let text_edit = TextEdit::singleline(&mut self.text)
                             .background_color(Color32::TRANSPARENT)
                             .frame(false)
-                            .font(FontId::new(12., FontFamily::Monospace));
+                            .font(FontId::new(12., FontFamily::Monospace))
+                            .id(self.field_id);
                         let output = text_edit.show(ui);
-                        output.response.request_focus();
                         let text_color = Color32::from_rgba_premultiplied(100, 100, 100, 100);
                         ui.painter_at(output.response.rect).galley(
                             output.galley_pos,
