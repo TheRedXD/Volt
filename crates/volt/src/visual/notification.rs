@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use egui::{Align, Layout, hex_color};
+use egui::{Align, Layout, Vec2, hex_color};
 use tap::Pipe;
 
 #[derive(Debug, Clone)]
@@ -56,7 +56,7 @@ impl NotificationDrawer {
 
 impl egui::Widget for &mut NotificationDrawer {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        ui.with_layout(Layout::bottom_up(Align::RIGHT), |ui| {
+        ui.allocate_ui_with_layout(Vec2::ZERO, Layout::bottom_up(Align::RIGHT), |ui| {
             self.notifications.extend(self.rx.try_iter());
             self.notifications.retain(|notification| {
                 let Some(opacity) = notification.duration.map_or(Some(1.), |duration| {
