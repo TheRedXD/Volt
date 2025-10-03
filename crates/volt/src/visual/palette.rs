@@ -114,6 +114,9 @@ impl Palette {
                         })
                     });
             });
+            if ui.ctx().input_mut(|i| i.key_pressed(Key::Escape)) {
+                self.showing = false;
+            }
         }
     }
 }
