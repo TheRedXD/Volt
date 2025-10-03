@@ -649,7 +649,6 @@ impl Widget for &mut Browser {
         let browser_width = ui.available_width();
         ui.vertical(|ui| {
             ui.visuals_mut().button_frame = false;
-            ui.visuals_mut().interact_cursor = Some(CursorIcon::PointingHand);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 16.;
                 ui.columns_const(|uis| {

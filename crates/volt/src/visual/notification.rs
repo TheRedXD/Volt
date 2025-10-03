@@ -1,7 +1,10 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::mpsc::Receiver,
+    time::{Duration, Instant},
+};
 
-use egui::{Align, Color32, LayerId, Layout, Rect, Sense, hex_color};
-use tap::{Pipe, Tap};
+use egui::{Align, Layout, hex_color};
+use tap::Pipe;
 
 #[derive(Debug, Clone)]
 pub struct Notification {
@@ -30,17 +33,12 @@ impl Notification {
 
 pub struct NotificationDrawer {
     notifications: Vec<Notification>,
-}
-
-impl Default for NotificationDrawer {
-    fn default() -> Self {
-        Self::new()
-    }
+    rx: Receiver<Notification>,
 }
 
 impl NotificationDrawer {
-    pub const fn new() -> Self {
-        Self { notifications: Vec::new() }
+    pub const fn new(rx: Receiver<Notification>) -> Self {
+        Self { notifications: Vec::new(), rx }
     }
 
     pub fn add_notification(&mut self, notification: Notification) {
@@ -59,6 +57,7 @@ impl NotificationDrawer {
 impl egui::Widget for &mut NotificationDrawer {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         ui.with_layout(Layout::bottom_up(Align::RIGHT), |ui| {
+            self.notifications.extend(self.rx.try_iter());
             self.notifications.retain(|notification| {
                 let Some(opacity) = notification.duration.map_or(Some(1.), |duration| {
                     (notification.added + duration).checked_duration_since(Instant::now()).as_ref().map(Duration::as_secs_f32)
