@@ -1,5 +1,5 @@
 use blerp::utils::zip;
-use egui::{Color32, ColorImage, hex_color};
+use egui::{Color32, ColorImage, Shadow, hex_color};
 use itertools::Itertools;
 
 // Expose components
@@ -40,9 +40,11 @@ pub struct ThemeColors {
     pub command_palette_border: Color32,
     pub command_palette_text: Color32,
     pub command_palette_placeholder_text: Color32,
+    pub shadow: Shadow,
 }
 
 impl Default for ThemeColors {
+    #[allow(clippy::cognitive_complexity, reason = "it is just colors")]
     fn default() -> Self {
         Self {
             accent: hex_color!("#b6afff"),
@@ -70,6 +72,12 @@ impl Default for ThemeColors {
             command_palette_border: hex_color!("#3d3b4b"),
             command_palette_text: hex_color!("#928ea7"),
             command_palette_placeholder_text: hex_color!("#928ea740"),
+            shadow: Shadow {
+                offset: [0, 0],
+                blur: 10,
+                spread: 5,
+                color: hex_color!("#00000020"),
+            },
         }
     }
 }

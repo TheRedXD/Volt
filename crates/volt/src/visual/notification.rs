@@ -73,12 +73,7 @@ impl egui::Widget for &mut NotificationDrawer {
                 egui::Frame::new()
                     .fill(self.theme.notification_background)
                     .stroke(Stroke::new(1., self.theme.notification_border))
-                    .shadow(Shadow {
-                        offset: [0, 0],
-                        blur: 10,
-                        spread: 5,
-                        color: hex_color!("#00000020"),
-                    })
+                    .shadow(self.theme.shadow)
                     .inner_margin(egui::Margin::same(10))
                     .outer_margin(egui::Margin::same(10))
                     .corner_radius(CornerRadius::same(8))

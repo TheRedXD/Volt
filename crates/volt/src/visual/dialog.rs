@@ -1,4 +1,4 @@
-use egui::{Align2, Context, CornerRadius, LayerId, Margin, Popup, PopupAnchor, RectAlign, Shadow, Ui, hex_color};
+use egui::{Align2, Context, CornerRadius, LayerId, Margin, Popup, PopupAnchor, RectAlign, Ui, hex_color};
 
 use crate::visual::ThemeColors;
 
@@ -19,13 +19,7 @@ pub fn dialog(ctx: &Context, theme: &ThemeColors, inner: impl FnOnce(&mut Ui)) {
         egui::Frame::new()
             .fill(theme.central_background)
             .stroke(egui::Stroke::new(1., hex_color!("#353248")))
-            .shadow(Shadow {
-                // TODO move all common shadows to a theme struct
-                offset: [0, 0],
-                blur: 10,
-                spread: 5,
-                color: hex_color!("#00000020"),
-            })
+            .shadow(theme.shadow)
             .corner_radius(CornerRadius::ZERO.at_least(5))
             .inner_margin(Margin::same(10)),
     )
