@@ -8,7 +8,7 @@ use std::{
 
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
 use egui::{
-    Align2, Area, CentralPanel, Context, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder
+    Align2, Area, CentralPanel, Context, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder,
 };
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;
@@ -163,8 +163,10 @@ impl App for VoltApp {
         });
 
         Area::new("notifications_area".into())
-            .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::ZERO)
             .interactable(false)
+            .pivot(Align2::RIGHT_BOTTOM)
+            .fixed_pos(ctx.screen_rect().right_bottom())
+            .default_size(Vec2::ZERO)
             .show(ctx, |ui| {
                 ui.add(&mut self.notification_drawer);
             });
