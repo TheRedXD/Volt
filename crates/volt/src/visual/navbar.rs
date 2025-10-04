@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{Color32, Image, Stroke, TextureOptions, Ui, Vec2, Widget, include_image};
+use egui::{hex_color, include_image, Color32, Image, Stroke, TextureOptions, Ui, Vec2, Widget};
 
 use super::ThemeColors;
 
@@ -8,11 +8,11 @@ pub fn navbar_menu_buttons(ui: &mut Ui) -> egui::Response {
         .show(ui, |ui| {
             ui.scope(|ui| {
                 ui.visuals_mut().widgets.inactive.weak_bg_fill = Color32::TRANSPARENT;
-                ui.visuals_mut().widgets.hovered.weak_bg_fill = Color32::TRANSPARENT;
-                ui.visuals_mut().widgets.active.weak_bg_fill = Color32::TRANSPARENT;
+                ui.visuals_mut().widgets.hovered.weak_bg_fill = hex_color!("#ffffff10");
+                ui.visuals_mut().widgets.active.weak_bg_fill = hex_color!("#ffffff20");
                 ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::NONE;
-                ui.visuals_mut().widgets.hovered.bg_stroke = Stroke::NONE;
-                ui.visuals_mut().widgets.active.bg_stroke = Stroke::NONE;
+                ui.visuals_mut().widgets.hovered.bg_stroke = Stroke::new(1., hex_color!("#ffffff20"));
+                ui.visuals_mut().widgets.active.bg_stroke = Stroke::new(1., hex_color!("#ffffff30"));
                 ui.add_space(5.0);
                 ui.menu_button("File", |ui| {
                     if ui.button("New").clicked() {

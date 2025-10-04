@@ -15,6 +15,7 @@ pub mod switch;
 // Theming
 #[derive(Debug, PartialEq, Eq)]
 pub struct ThemeColors {
+    pub accent: Color32,
     pub navbar_background_gradient_top: Color32,
     pub navbar_background_gradient_bottom: Color32,
     pub navbar_outline: Color32,
@@ -44,6 +45,7 @@ pub struct ThemeColors {
 impl Default for ThemeColors {
     fn default() -> Self {
         Self {
+            accent: hex_color!("#b6afff"),
             navbar_background_gradient_top: hex_color!("#1e2132"),
             navbar_background_gradient_bottom: hex_color!("#171825"),
             navbar_outline: hex_color!("#453f67"),
@@ -61,7 +63,7 @@ impl Default for ThemeColors {
             browser_unselected_hover_button_fg_invalid: hex_color!("#f591b5"),
             browser_folder_text: hex_color!("#928ea7"),
             browser_folder_hover_text: hex_color!("#ece9ff"),
-            playlist_bar: hex_color!("#5e5a75"),
+            playlist_bar: hex_color!("#4c495f"),
             playlist_beat: hex_color!("#2e2b3f"),
             bg_text: hex_color!("#646987"),
             command_palette: hex_color!("#1d1b2b"),

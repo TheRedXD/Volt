@@ -8,7 +8,7 @@ use std::{
 
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
 use egui::{
-    Align2, Area, CentralPanel, Context, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder,
+    hex_color, Align2, Area, CentralPanel, Context, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, Shadow, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder
 };
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;
@@ -62,6 +62,7 @@ struct VoltApp {
     pub theme: Rc<ThemeColors>,
     pub timings_toggle: bool,
     pub show_welcome: bool,
+    pub show_browser: bool,
     pub palette: Palette,
     pub notifications_tx: Sender<Notification>,
 }
@@ -108,6 +109,7 @@ impl VoltApp {
             notification_drawer: NotificationDrawer::new(rx, Rc::clone(&theme)),
             timings_toggle: false,
             show_welcome: true,
+            show_browser: true,
             palette: Palette::new(Rc::clone(&theme)),
             theme,
             notifications_tx: tx,
@@ -119,11 +121,17 @@ impl App for VoltApp {
     #[allow(clippy::too_many_lines, reason = "shut")]
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         let time_render_start = Instant::now();
+        // TODO: build a better welcome dialog, and build a proper dialog system
         if self.show_welcome {
             Area::new("center_area".into()).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).show(ctx, |ui| {
+                let mut shadow = Shadow::default();
+                shadow.blur = 10;
+                shadow.color = hex_color!("#00000020");
+                shadow.spread = 5;
                 egui::Frame::new()
                     .fill(self.theme.central_background)
-                    .stroke(egui::Stroke::new(1., self.theme.playlist_bar))
+                    .stroke(egui::Stroke::new(1., hex_color!("#353248")))
+                    .shadow(shadow)
                     .corner_radius(CornerRadius::ZERO.at_least(5))
                     .inner_margin(Margin::same(10))
                     .show(ui, |ui| {
@@ -136,7 +144,10 @@ impl App for VoltApp {
                         margin.top = 5;
                         egui::Frame::new().inner_margin(margin).show(ui, |ui| {
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                let close_btn = egui::Button::new("Ok");
+                                ui.style_mut().spacing.button_padding = Vec2 { x: 12., y: 4. };
+                                ui.style_mut().visuals.widgets.hovered.weak_bg_fill = hex_color!("#ffffff10");
+                                ui.style_mut().visuals.widgets.active.weak_bg_fill = hex_color!("#ffffff20");
+                                let close_btn = egui::Button::new("Ok").corner_radius(10.);
                                 if ui.add(close_btn).clicked() {
                                     self.show_welcome = false;
                                 }
@@ -150,15 +161,17 @@ impl App for VoltApp {
             ui.add(navbar(&self.theme));
         });
         TopBottomPanel::bottom("status").frame(egui::Frame::default()).show_separator_line(false).show(ctx, |ui| {
-            ui.add(status(&self.theme));
+            ui.add(status(&self.theme, &mut self.show_browser));
         });
-        SidePanel::left("browser")
-            .default_width(300.)
-            .frame(egui::Frame::default().fill(self.theme.browser))
-            .show_separator_line(false)
-            .show(ctx, |ui| {
-                ui.add(&mut self.browser);
-            });
+        if self.show_browser {
+            SidePanel::left("browser")
+                .default_width(300.)
+                .frame(egui::Frame::default().fill(self.theme.browser))
+                .show_separator_line(false)
+                .show(ctx, |ui| {
+                    ui.add(&mut self.browser);
+                });
+        }
         CentralPanel::default().frame(egui::Frame::default().fill(self.theme.central_background)).show(ctx, |ui| {
             ui.add(&mut self.central);
         });
