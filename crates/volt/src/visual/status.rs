@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{Button, FontFamily, Image, Label, Margin, RichText, Sense, TextureOptions, Ui, Vec2, Widget, hex_color, include_image};
+use egui::{hex_color, include_image, Button, FontFamily, Image, Label, Margin, Modifiers, RichText, Sense, TextureOptions, Ui, Vec2, Widget};
 use itertools::Itertools;
 use tap::Pipe;
 
@@ -69,6 +69,22 @@ pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut 
                                 ui.separator();
                             }
                         }
+                    }
+                    let ctrl_tab_pressed = ui.ctx().input_mut(|i| {
+                        i.consume_shortcut(&egui::KeyboardShortcut {
+                            modifiers: Modifiers {
+                                ctrl: true,
+                                ..Default::default()
+                            },
+                            logical_key: egui::Key::Tab
+                        })
+                    });
+                    if ctrl_tab_pressed {
+                        *central_mode = match *central_mode {
+                            Mode::Graph => Mode::Playlist,
+                            Mode::Playlist => Mode::Graph,
+                        };
+                        ui.ctx().request_repaint();
                     }
                 });
             });
