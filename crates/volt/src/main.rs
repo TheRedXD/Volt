@@ -23,7 +23,7 @@ mod shortcuts;
 use tap::{Pipe, Tap};
 use visual::{ThemeColors, browser::Browser, central::Central, navbar::navbar, notification::NotificationDrawer, palette::Palette, status::status};
 
-use crate::visual::notification::Notification;
+use crate::visual::{notification::Notification};
 
 fn main() -> eframe::Result {
     setup_panic!();
@@ -63,6 +63,8 @@ struct VoltApp {
     pub timings_toggle: bool,
     pub show_welcome: bool,
     pub show_browser: bool,
+    pub graph_enabled: bool,
+    pub arrange_enabled: bool,
     pub palette: Palette,
     pub notifications_tx: Sender<Notification>,
 }
@@ -110,6 +112,8 @@ impl VoltApp {
             timings_toggle: false,
             show_welcome: true,
             show_browser: true,
+            graph_enabled: false,
+            arrange_enabled: true,
             palette: Palette::new(Rc::clone(&theme)),
             theme,
             notifications_tx: tx,
@@ -161,7 +165,7 @@ impl App for VoltApp {
             ui.add(navbar(&self.theme));
         });
         TopBottomPanel::bottom("status").frame(egui::Frame::default()).show_separator_line(false).show(ctx, |ui| {
-            ui.add(status(&self.theme, &mut self.show_browser));
+            ui.add(status(&self.theme, &mut self.show_browser, &mut self.graph_enabled, &mut self.arrange_enabled, &mut self.central.mode));
         });
         if self.show_browser {
             SidePanel::left("browser")

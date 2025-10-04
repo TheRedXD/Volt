@@ -198,7 +198,8 @@ mod playlist {
     }
 }
 
-enum Mode {
+#[derive(PartialEq, Eq)]
+pub enum Mode {
     Playlist,
     Graph,
 }
@@ -210,7 +211,7 @@ impl Default for Mode {
 }
 
 pub struct Central {
-    mode: Mode,
+    pub mode: Mode,
     playlist: Playlist,
     graph: Graph,
 }
