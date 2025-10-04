@@ -108,6 +108,7 @@ pub fn navbar(themes: &ThemeColors) -> impl Widget + use<'_> {
                         egui::Frame::new()
                             .outer_margin(egui::Margin::same(5))
                             .inner_margin(egui::Margin::same(5))
+                            .stroke(Stroke::new(1., hex_color!("#35324840")))
                             .corner_radius(egui::CornerRadius::same(5))
                             .fill(themes.navbar_widget)
                             .show(ui, |ui| {
@@ -126,6 +127,7 @@ pub fn navbar(themes: &ThemeColors) -> impl Widget + use<'_> {
                                 egui::Frame::new()
                                     .outer_margin(egui::Margin::symmetric(2, 5))
                                     .inner_margin(egui::Margin::same(5))
+                                    .stroke(Stroke::new(1., hex_color!("#35324840")))
                                     .corner_radius(egui::CornerRadius::same(5))
                                     .fill(themes.navbar_widget)
                                     .show(ui, |ui| {

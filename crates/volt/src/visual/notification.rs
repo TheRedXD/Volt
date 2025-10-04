@@ -61,6 +61,7 @@ impl NotificationDrawer {
 impl egui::Widget for &mut NotificationDrawer {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         ui.with_layout(Layout::bottom_up(Align::RIGHT), |ui| {
+            ui.add_space(30.);
             self.notifications.extend(self.rx.try_iter());
             self.notifications.retain(|notification| {
                 let Some(opacity) = notification.duration.map_or(Some(1.), |duration| {
