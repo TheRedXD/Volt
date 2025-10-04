@@ -7,10 +7,7 @@ use std::{
 };
 
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
-use egui::{
-    Align2, Area, CentralPanel, Context, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, Shadow, SidePanel, TextStyle, TopBottomPanel, Vec2,
-    ViewportBuilder, hex_color,
-};
+use egui::{Align2, Area, CentralPanel, Context, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Popup, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder, hex_color};
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;
 use image::{ImageFormat, ImageReader};
@@ -24,7 +21,7 @@ mod visual;
 use tap::{Pipe, Tap};
 use visual::{ThemeColors, browser::Browser, central::Central, navbar::navbar, notification::NotificationDrawer, palette::Palette, status::status};
 
-use crate::visual::notification::Notification;
+use crate::visual::{dialog::dialog, notification::Notification};
 
 fn main() -> eframe::Result {
     setup_panic!();
@@ -62,7 +59,6 @@ struct VoltApp {
     pub notification_drawer: NotificationDrawer,
     pub theme: Rc<ThemeColors>,
     pub timings_toggle: bool,
-    pub show_welcome: bool,
     pub palette: Palette,
     pub notifications_tx: Sender<Notification>,
 }
@@ -102,13 +98,13 @@ impl VoltApp {
             style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1., theme.playlist_bar);
             style.visuals.widgets.inactive.weak_bg_fill = theme.command_palette;
         });
+        Popup::open_id(&cc.egui_ctx, "welcome".into());
         let (tx, rx) = channel();
         Self {
             browser: Browser::new(Rc::clone(&theme)),
             central: Central::new(),
             notification_drawer: NotificationDrawer::new(rx, Rc::clone(&theme)),
             timings_toggle: false,
-            show_welcome: true,
             palette: Palette::new(Rc::clone(&theme)),
             theme,
             notifications_tx: tx,
@@ -120,43 +116,21 @@ impl App for VoltApp {
     #[allow(clippy::too_many_lines, reason = "shut")]
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         let time_render_start = Instant::now();
-        // TODO: build a better welcome dialog, and build a proper dialog system
-        if self.show_welcome {
-            Area::new("center_area".into()).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).show(ctx, |ui| {
-                egui::Frame::new()
-                    .fill(self.theme.central_background)
-                    .stroke(egui::Stroke::new(1., hex_color!("#353248")))
-                    .shadow(Shadow { // TODO move all common shadows to a theme struct
-                        offset: [0, 0],
-                        blur: 10,
-                        spread: 5,
-                        color: hex_color!("#00000020"),
-                    })
-                    .corner_radius(CornerRadius::ZERO.at_least(5))
-                    .inner_margin(Margin::same(10))
-                    .show(ui, |ui| {
-                        ui.label("Welcome to Volt!");
-                        ui.label("This is extremely work-in-progress and is not finished at all!");
-                        ui.label("If you can, please check out our GitHub repository:");
-                        ui.hyperlink_to("github.com/TheRedXD/Volt", "https://github.com/TheRedXD/Volt");
-                        ui.style_mut().spacing.item_spacing = Vec2::ZERO;
-                        let mut margin = Margin::ZERO;
-                        margin.top = 5;
-                        egui::Frame::new().inner_margin(margin).show(ui, |ui| {
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.style_mut().spacing.button_padding = Vec2 { x: 12., y: 4. };
-                                ui.style_mut().visuals.widgets.hovered.weak_bg_fill = hex_color!("#ffffff10");
-                                ui.style_mut().visuals.widgets.active.weak_bg_fill = hex_color!("#ffffff20");
-                                let close_btn = egui::Button::new("Ok").corner_radius(10.);
-                                if ui.add(close_btn).clicked() {
-                                    self.show_welcome = false;
-                                }
-                            });
-                        });
-                    });
+        dialog(ctx, &self.theme, |ui| {
+            ui.label("Welcome to Volt!");
+            ui.label("This is extremely work-in-progress and is not finished at all!");
+            ui.label("If you can, please check out our GitHub repository:");
+            ui.hyperlink_to("github.com/TheRedXD/Volt", "https://github.com/TheRedXD/Volt");
+            ui.add_space(5.);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.style_mut().spacing.button_padding = Vec2 { x: 12., y: 4. };
+                ui.style_mut().visuals.widgets.hovered.weak_bg_fill = hex_color!("#ffffff10");
+                ui.style_mut().visuals.widgets.active.weak_bg_fill = hex_color!("#ffffff20");
+                if ui.add(egui::Button::new("Ok").corner_radius(10.)).clicked() {
+                    ui.close();
+                }
             });
-        }
-
+        });
         TopBottomPanel::top("navbar").frame(egui::Frame::default()).show_separator_line(false).show(ctx, |ui| {
             ui.add(navbar(&self.theme));
         });
