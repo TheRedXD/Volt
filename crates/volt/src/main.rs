@@ -35,7 +35,7 @@ fn main() -> eframe::Result {
         NativeOptions {
             vsync: true,
             wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
-                present_mode: eframe::wgpu::PresentMode::AutoVsync,
+                present_mode: eframe::wgpu::PresentMode::Immediate,
                 ..Default::default()
             },
             viewport: ViewportBuilder::default().with_drag_and_drop(true).with_icon(
