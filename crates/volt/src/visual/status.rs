@@ -40,6 +40,7 @@ pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut 
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.style_mut().spacing.item_spacing = Vec2::X * 10.;
+                ui.add_space(10.);
                 egui::Frame::new().inner_margin(Margin::same(5)).show(ui, |ui| {
                     enum Widget {
                         Button(&'static str, Mode),

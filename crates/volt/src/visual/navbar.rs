@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{hex_color, include_image, Color32, Image, Stroke, TextureOptions, Ui, Vec2, Widget};
+use egui::{containers::menu::MenuButton, hex_color, include_image, Color32, FontId, Image, Sense, Shadow, Stroke, TextureOptions, Ui, Vec2, Widget};
 
 use super::theme::ThemeColors;
 
@@ -13,8 +13,19 @@ pub fn navbar_menu_buttons(ui: &mut Ui) -> egui::Response {
                 ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::NONE;
                 ui.visuals_mut().widgets.hovered.bg_stroke = Stroke::new(1., hex_color!("#ffffff20"));
                 ui.visuals_mut().widgets.active.bg_stroke = Stroke::new(1., hex_color!("#ffffff30"));
-                ui.add_space(5.0);
-                ui.menu_button("File", |ui| {
+                ui.style_mut().spacing.button_padding = Vec2 {x: 6., y: 2.};
+                ui.style_mut().override_font_id = Some(FontId::proportional(12.));
+                ui.add_space(2.0);
+                let mut popup_shadow = Shadow::default();
+                popup_shadow.blur = 10;
+                popup_shadow.color = hex_color!("#00000010");
+                popup_shadow.spread = 5;
+                ui.style_mut().visuals.popup_shadow = popup_shadow;
+                let mut click_no_focus = Sense::click();
+                click_no_focus.remove(Sense::focusable_noninteractive());
+                let mut file_menu = MenuButton::new("File");
+                file_menu.button = file_menu.button.sense(click_no_focus);
+                file_menu.ui(ui, |ui| {
                     if ui.button("New").clicked() {
                         todo!();
                     }
@@ -28,8 +39,10 @@ pub fn navbar_menu_buttons(ui: &mut Ui) -> egui::Response {
                         ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
-                ui.add_space(5.0);
-                ui.menu_button("Edit", |ui| {
+                ui.add_space(2.0);
+                let mut edit_menu = MenuButton::new("Edit");
+                edit_menu.button = edit_menu.button.sense(click_no_focus);
+                edit_menu.ui(ui, |ui| {
                     if ui.button("Undo").clicked() {
                         todo!();
                     }
@@ -46,8 +59,10 @@ pub fn navbar_menu_buttons(ui: &mut Ui) -> egui::Response {
                         todo!();
                     }
                 });
-                ui.add_space(5.0);
-                ui.menu_button("View", |ui| {
+                ui.add_space(2.0);
+                let mut view_menu = MenuButton::new("View");
+                view_menu.button = view_menu.button.sense(click_no_focus);
+                view_menu.ui(ui, |ui| {
                     if ui.button("Zoom In").clicked() {
                         todo!();
                     }
@@ -58,8 +73,10 @@ pub fn navbar_menu_buttons(ui: &mut Ui) -> egui::Response {
                         todo!();
                     }
                 });
-                ui.add_space(5.0);
-                ui.menu_button("Help", |ui| {
+                ui.add_space(2.0);
+                let mut help_menu = MenuButton::new("Help");
+                help_menu.button = help_menu.button.sense(click_no_focus);
+                help_menu.ui(ui, |ui| {
                     if ui.button("Documentation").clicked() {
                         todo!();
                     }
