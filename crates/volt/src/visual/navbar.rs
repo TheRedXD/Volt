@@ -112,8 +112,8 @@ pub fn navbar(themes: &ThemeColors) -> impl Widget + use<'_> {
                             .corner_radius(egui::CornerRadius::same(5))
                             // .fill(themes.navbar_widget)
                             .show(ui, |ui| {
-                                egui::Frame::new().inner_margin(egui::Margin::symmetric(5, 0)).show(ui, |ui| {
-                                    ui.add(Image::new(include_image!("../images/icons/navbar-icon.svg")).fit_to_exact_size(Vec2::splat(16.)));
+                                egui::Frame::new().inner_margin(egui::Margin::symmetric(5, -6)).show(ui, |ui| {
+                                    ui.add(Image::new(include_image!("../images/icons/navbar-icon.svg")).fit_to_exact_size(Vec2::splat(30.)));
                                 });
                                 ui.vertical(|ui| {
                                     ui.add_space(2.0);
