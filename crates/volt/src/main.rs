@@ -8,7 +8,8 @@ use std::{
 
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
 use egui::{
-    hex_color, Align2, Area, CentralPanel, Context, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, Shadow, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder
+    Align2, Area, CentralPanel, Context, CornerRadius, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Margin, Shadow, SidePanel, TextStyle, TopBottomPanel, Vec2,
+    ViewportBuilder, hex_color,
 };
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;
@@ -16,14 +17,14 @@ use image::{ImageFormat, ImageReader};
 use info::handle_args;
 
 mod info;
+mod shortcuts;
 mod timings;
 mod visual;
-mod shortcuts;
 
 use tap::{Pipe, Tap};
 use visual::{ThemeColors, browser::Browser, central::Central, navbar::navbar, notification::NotificationDrawer, palette::Palette, status::status};
 
-use crate::visual::{notification::Notification};
+use crate::visual::notification::Notification;
 
 fn main() -> eframe::Result {
     setup_panic!();
@@ -128,14 +129,15 @@ impl App for VoltApp {
         // TODO: build a better welcome dialog, and build a proper dialog system
         if self.show_welcome {
             Area::new("center_area".into()).anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO).show(ctx, |ui| {
-                let mut shadow = Shadow::default();
-                shadow.blur = 10;
-                shadow.color = hex_color!("#00000020");
-                shadow.spread = 5;
                 egui::Frame::new()
                     .fill(self.theme.central_background)
                     .stroke(egui::Stroke::new(1., hex_color!("#353248")))
-                    .shadow(shadow)
+                    .shadow(Shadow { // TODO move all common shadows to a theme struct
+                        offset: [0, 0],
+                        blur: 10,
+                        spread: 5,
+                        color: hex_color!("#00000020"),
+                    })
                     .corner_radius(CornerRadius::ZERO.at_least(5))
                     .inner_margin(Margin::same(10))
                     .show(ui, |ui| {
