@@ -9,6 +9,7 @@ use std::{
 
 include!("src/visual/theme.rs");
 
+// FIXME: use unmultiplied instead of premultiplied (we'll have to get rid of const because of it), alpha is broken right now
 fn main() {
     let themes_dir = PathBuf::from(var("CARGO_MANIFEST_DIR").unwrap()).join("src/themes");
     println!("cargo:rerun-if-changed={}", themes_dir.display());
