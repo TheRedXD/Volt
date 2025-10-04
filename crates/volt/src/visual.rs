@@ -1,5 +1,5 @@
 use blerp::utils::zip;
-use egui::{Color32, ColorImage, Shadow, hex_color};
+use egui::{Color32, ColorImage};
 use itertools::Itertools;
 
 // Expose components
@@ -11,75 +11,17 @@ pub mod notification;
 pub mod palette;
 pub mod status;
 pub mod switch;
+pub mod theme;
 
-// Theming
-#[derive(Debug, PartialEq, Eq)]
-pub struct ThemeColors {
-    pub accent: Color32,
-    pub navbar_background_gradient_top: Color32,
-    pub navbar_background_gradient_bottom: Color32,
-    pub navbar_outline: Color32,
-    pub navbar_widget: Color32,
-    pub notification_background: Color32,
-    pub notification_border: Color32,
-    pub central_background: Color32,
-    pub browser: Color32,
-    pub browser_outline: Color32,
-    pub browser_selected_button_fg: Color32,
-    pub browser_unselected_button_fg: Color32,
-    pub browser_unselected_hover_button_fg: Color32,
-    pub browser_invalid_name_bg: Color32,
-    pub browser_unselected_hover_button_fg_invalid: Color32,
-    pub browser_unselected_button_fg_invalid: Color32,
-    pub browser_folder_text: Color32,
-    pub browser_folder_hover_text: Color32,
-    pub playlist_bar: Color32,
-    pub playlist_beat: Color32,
-    pub bg_text: Color32,
-    pub command_palette: Color32,
-    pub command_palette_border: Color32,
-    pub command_palette_text: Color32,
-    pub command_palette_placeholder_text: Color32,
-    pub shadow: Shadow,
-}
-
-impl Default for ThemeColors {
+impl Default for theme::ThemeColors {
     #[allow(clippy::cognitive_complexity, reason = "it is just colors")]
     fn default() -> Self {
-        Self {
-            accent: hex_color!("#b6afff"),
-            navbar_background_gradient_top: hex_color!("#1e2132"),
-            navbar_background_gradient_bottom: hex_color!("#171825"),
-            navbar_outline: hex_color!("#453f67"),
-            navbar_widget: hex_color!("#07081580"),
-            notification_background: hex_color!("#1d1b2b"),
-            notification_border: hex_color!("#3d3b4b"),
-            central_background: hex_color!("#171825"),
-            browser: hex_color!("#171825"),
-            browser_outline: hex_color!("#28243e"),
-            browser_selected_button_fg: hex_color!("#ffcf7b"),
-            browser_unselected_button_fg: hex_color!("#646d88"),
-            browser_unselected_hover_button_fg: hex_color!("#8591b5"),
-            browser_invalid_name_bg: hex_color!("#ff000010"),
-            browser_unselected_button_fg_invalid: hex_color!("#a46d88"),
-            browser_unselected_hover_button_fg_invalid: hex_color!("#f591b5"),
-            browser_folder_text: hex_color!("#928ea7"),
-            browser_folder_hover_text: hex_color!("#ece9ff"),
-            playlist_bar: hex_color!("#4c495f"),
-            playlist_beat: hex_color!("#2e2b3f"),
-            bg_text: hex_color!("#646987"),
-            command_palette: hex_color!("#1d1b2b"),
-            command_palette_border: hex_color!("#3d3b4b"),
-            command_palette_text: hex_color!("#928ea7"),
-            command_palette_placeholder_text: hex_color!("#928ea740"),
-            shadow: Shadow {
-                offset: [0, 0],
-                blur: 10,
-                spread: 5,
-                color: hex_color!("#00000020"),
-            },
-        }
+        builtin_themes::DEFAULT
     }
+}
+
+pub mod builtin_themes {
+    include!(concat!(env!("OUT_DIR"), "/themes.rs"));
 }
 
 /// Create a vertical gradient of the specified height (in pixels).

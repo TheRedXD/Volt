@@ -5,10 +5,7 @@ use strsim::damerau_levenshtein;
 
 use crate::{
     info,
-    visual::{
-        ThemeColors,
-        notification::Notification,
-    },
+    visual::{notification::Notification, theme::ThemeColors},
 };
 
 pub struct Palette {

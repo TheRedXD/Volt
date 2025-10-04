@@ -37,7 +37,7 @@ use egui::{
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 
-use crate::visual::ThemeColors;
+use crate::visual::theme::ThemeColors;
 
 // https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#bit-twiddling
 macro_rules! count_tts {

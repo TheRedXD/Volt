@@ -1,7 +1,7 @@
 use eframe::egui;
 use egui::{hex_color, include_image, Color32, Image, Stroke, TextureOptions, Ui, Vec2, Widget};
 
-use super::ThemeColors;
+use super::theme::ThemeColors;
 
 pub fn navbar_menu_buttons(ui: &mut Ui) -> egui::Response {
     egui::Frame::new()

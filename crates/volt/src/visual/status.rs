@@ -3,9 +3,7 @@ use egui::{Button, FontFamily, Image, Label, Margin, RichText, Sense, TextureOpt
 use itertools::Itertools;
 use tap::Pipe;
 
-use crate::visual::central::Mode;
-
-use super::ThemeColors;
+use crate::visual::{central::Mode, theme::ThemeColors};
 
 pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut Mode) -> impl Widget {
     |ui: &mut Ui| {

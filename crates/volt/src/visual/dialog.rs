@@ -1,6 +1,6 @@
 use egui::{Align2, Context, CornerRadius, LayerId, Margin, Popup, PopupAnchor, RectAlign, Ui, hex_color};
 
-use crate::visual::ThemeColors;
+use crate::visual::theme::ThemeColors;
 
 pub fn dialog(ctx: &Context, theme: &ThemeColors, inner: impl FnOnce(&mut Ui)) {
     Popup::new(

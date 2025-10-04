@@ -7,7 +7,7 @@ use std::{
 use egui::{Align, CornerRadius, Layout, Shadow, Stroke, TextWrapMode, hex_color};
 use tap::Pipe;
 
-use crate::visual::ThemeColors;
+use crate::visual::theme::ThemeColors;
 
 #[derive(Debug, Clone)]
 pub struct Notification {

@@ -1,0 +1,31 @@
+use egui::{Color32, Shadow};
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ThemeColors {
+    pub accent: Color32,
+    pub navbar_background_gradient_top: Color32,
+    pub navbar_background_gradient_bottom: Color32,
+    pub navbar_outline: Color32,
+    pub navbar_widget: Color32,
+    pub notification_background: Color32,
+    pub notification_border: Color32,
+    pub central_background: Color32,
+    pub browser: Color32,
+    pub browser_outline: Color32,
+    pub browser_selected_button_fg: Color32,
+    pub browser_unselected_button_fg: Color32,
+    pub browser_unselected_hover_button_fg: Color32,
+    pub browser_invalid_name_bg: Color32,
+    pub browser_unselected_hover_button_fg_invalid: Color32,
+    pub browser_unselected_button_fg_invalid: Color32,
+    pub browser_folder_text: Color32,
+    pub browser_folder_hover_text: Color32,
+    pub playlist_bar: Color32,
+    pub playlist_beat: Color32,
+    pub bg_text: Color32,
+    pub command_palette: Color32,
+    pub command_palette_border: Color32,
+    pub command_palette_text: Color32,
+    pub command_palette_placeholder_text: Color32,
+    pub shadow: Shadow,
+}

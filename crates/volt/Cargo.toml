@@ -27,7 +27,15 @@ pastey = "0.1.1"
 unicode-truncate = "2.0.0"
 symphonia = { version = "0.5.4", features = ["all"] }
 strsim = "0.11.1"
+color-hex = "0.2.0"
 
 # TEMPORARY FIX: Fix some platform support
 [target.'cfg(target_os = "linux")'.dependencies]
 wgpu = "25"
+
+[build-dependencies]
+egui = { version = "0.32.3", features = ["color-hex"] }
+proc-macro2 = "1.0.101"
+quote = "1.0.41"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.145"

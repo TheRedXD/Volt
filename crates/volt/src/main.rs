@@ -19,7 +19,7 @@ mod timings;
 mod visual;
 
 use tap::{Pipe, Tap};
-use visual::{ThemeColors, browser::Browser, central::Central, navbar::navbar, notification::NotificationDrawer, palette::Palette, status::status};
+use visual::{theme::ThemeColors, browser::Browser, central::Central, navbar::navbar, notification::NotificationDrawer, palette::Palette, status::status};
 
 use crate::visual::{dialog::dialog, notification::Notification};
 
