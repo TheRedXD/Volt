@@ -1,10 +1,11 @@
 use std::{
-    sync::mpsc::Receiver,
-    time::{Duration, Instant},
+    rc::Rc, sync::mpsc::Receiver, time::{Duration, Instant}
 };
 
-use egui::{Align, Layout, TextWrapMode, Vec2, hex_color};
+use egui::{hex_color, Align, CornerRadius, Layout, Shadow, Stroke, TextWrapMode, Vec2};
 use tap::Pipe;
+
+use crate::visual::ThemeColors;
 
 #[derive(Debug, Clone)]
 pub struct Notification {
@@ -34,11 +35,12 @@ impl Notification {
 pub struct NotificationDrawer {
     notifications: Vec<Notification>,
     rx: Receiver<Notification>,
+    theme: Rc<ThemeColors>
 }
 
 impl NotificationDrawer {
-    pub const fn new(rx: Receiver<Notification>) -> Self {
-        Self { notifications: Vec::new(), rx }
+    pub const fn new(rx: Receiver<Notification>, theme: Rc<ThemeColors>) -> Self {
+        Self { notifications: Vec::new(), rx, theme }
     }
 
     pub fn add_notification(&mut self, notification: Notification) {
@@ -66,13 +68,24 @@ impl egui::Widget for &mut NotificationDrawer {
                 };
                 ui.set_opacity(opacity);
                 ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
-                egui::Frame::new().fill(hex_color!("#222222")).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
-                    ui.scope(|ui| {
-                        ui.multiply_opacity(0.5);
-                        ui.label(format!("{:?} ago", notification.added.elapsed().as_secs_f32().round().pipe(Duration::from_secs_f32)));
+                let mut shadow = Shadow::default();
+                shadow.blur = 10;
+                shadow.color = hex_color!("#00000020");
+                shadow.spread = 5;
+                egui::Frame::new()
+                    .fill(self.theme.notification_background)
+                    .stroke(Stroke::new(1., self.theme.notification_border))
+                    .shadow(shadow)
+                    .inner_margin(egui::Margin::same(10))
+                    .outer_margin(egui::Margin::same(10))
+                    .corner_radius(CornerRadius::same(8))
+                    .show(ui, |ui| {
+                        ui.scope(|ui| {
+                            ui.multiply_opacity(0.5);
+                            ui.label(format!("{:?} ago", notification.added.elapsed().as_secs_f32().round().pipe(Duration::from_secs_f32)));
+                        });
+                        ui.label(&notification.message);
                     });
-                    ui.label(&notification.message);
-                });
                 ui.ctx().request_repaint();
                 true
             });

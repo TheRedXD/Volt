@@ -104,7 +104,7 @@ impl VoltApp {
         Self {
             browser: Browser::new(Rc::clone(&theme)),
             central: Central::new(),
-            notification_drawer: NotificationDrawer::new(rx),
+            notification_drawer: NotificationDrawer::new(rx, Rc::clone(&theme)),
             timings_toggle: false,
             show_welcome: true,
             palette: Palette::new(Rc::clone(&theme)),
