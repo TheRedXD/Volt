@@ -7,7 +7,7 @@ use std::{
 };
 
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
-use egui::{hex_color, Align2, Area, CentralPanel, Context, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Popup, SidePanel, Stroke, TextStyle, TopBottomPanel, Vec2, ViewportBuilder};
+use egui::{hex_color, Align2, Area, CentralPanel, Context, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Modifiers, Popup, SidePanel, Stroke, TextStyle, TopBottomPanel, Vec2, ViewportBuilder};
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;
 use image::{ImageFormat, ImageReader};
@@ -146,6 +146,19 @@ impl App for VoltApp {
                 .show(ctx, |ui| {
                     ui.add(&mut self.browser);
                 });
+        }
+        let ctrl_b_pressed = ctx.input_mut(|i| {
+            i.consume_shortcut(&egui::KeyboardShortcut {
+                modifiers: Modifiers {
+                    ctrl: true,
+                    ..Default::default()
+                },
+                logical_key: egui::Key::B
+            })
+        });
+        if ctrl_b_pressed {
+            self.browser.show = !self.browser.show;
+            ctx.request_repaint();
         }
         CentralPanel::default().frame(egui::Frame::default().fill(self.theme.central_background)).show(ctx, |ui| {
             ui.add(&mut self.central);
