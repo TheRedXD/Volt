@@ -424,7 +424,7 @@ impl Central {
                         .tuple_windows()
                     {
                         #[allow(clippy::tuple_array_conversions, reason = "this looks fine")]
-                        painter.line_segment([a, b], Stroke::new(2., hex_color!("#80808080")));
+                        painter.line_segment([a, b], Stroke::new(2., hex_color!("#808080ff")));
                     }
                 }
             })
