@@ -7,7 +7,7 @@ use std::{
 };
 
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
-use egui::{Align2, Area, CentralPanel, Context, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Popup, SidePanel, TextStyle, TopBottomPanel, Vec2, ViewportBuilder, hex_color};
+use egui::{hex_color, Align2, Area, CentralPanel, Context, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Popup, SidePanel, Stroke, TextStyle, TopBottomPanel, Vec2, ViewportBuilder};
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;
 use image::{ImageFormat, ImageReader};
@@ -95,8 +95,9 @@ impl VoltApp {
             .map(|(text_style, size)| (text_style, FontId::new(size, FontFamily::Proportional)))
             .into();
             style.visuals.interact_cursor = Some(CursorIcon::PointingHand);
-            style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1., theme.playlist_bar);
+            style.visuals.widgets.inactive.bg_stroke = Stroke::new(1., theme.playlist_bar);
             style.visuals.widgets.inactive.weak_bg_fill = theme.command_palette;
+            style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, hex_color!("#353248"));
         });
         Popup::open_id(&cc.egui_ctx, "welcome".into());
         let (tx, rx) = channel();
@@ -134,7 +135,7 @@ impl App for VoltApp {
         TopBottomPanel::top("navbar").frame(egui::Frame::default()).show_separator_line(false).show(ctx, |ui| {
             ui.add(navbar(&self.theme));
         });
-        TopBottomPanel::bottom("status").frame(egui::Frame::default()).show_separator_line(false).show(ctx, |ui| {
+        TopBottomPanel::bottom("status").frame(egui::Frame::default()).show(ctx, |ui| {
             ui.add(status(&self.theme, &mut self.browser.show, &mut self.central.mode));
         });
         if self.browser.show {
