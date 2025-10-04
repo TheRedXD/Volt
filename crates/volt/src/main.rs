@@ -167,7 +167,7 @@ impl App for VoltApp {
             SidePanel::left("browser")
                 .default_width(300.)
                 .frame(egui::Frame::default().fill(self.theme.browser))
-                .show_separator_line(false)
+                .show_separator_line(true)
                 .show(ctx, |ui| {
                     ui.add(&mut self.browser);
                 });
