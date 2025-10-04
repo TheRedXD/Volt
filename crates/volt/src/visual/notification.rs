@@ -1,8 +1,10 @@
 use std::{
-    rc::Rc, sync::mpsc::Receiver, time::{Duration, Instant}
+    rc::Rc,
+    sync::mpsc::Receiver,
+    time::{Duration, Instant},
 };
 
-use egui::{hex_color, Align, CornerRadius, Layout, Shadow, Stroke, TextWrapMode, Vec2};
+use egui::{Align, CornerRadius, Layout, Shadow, Stroke, TextWrapMode, hex_color};
 use tap::Pipe;
 
 use crate::visual::ThemeColors;
@@ -35,7 +37,7 @@ impl Notification {
 pub struct NotificationDrawer {
     notifications: Vec<Notification>,
     rx: Receiver<Notification>,
-    theme: Rc<ThemeColors>
+    theme: Rc<ThemeColors>,
 }
 
 impl NotificationDrawer {
@@ -68,14 +70,15 @@ impl egui::Widget for &mut NotificationDrawer {
                 };
                 ui.set_opacity(opacity);
                 ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
-                let mut shadow = Shadow::default();
-                shadow.blur = 10;
-                shadow.color = hex_color!("#00000020");
-                shadow.spread = 5;
                 egui::Frame::new()
                     .fill(self.theme.notification_background)
                     .stroke(Stroke::new(1., self.theme.notification_border))
-                    .shadow(shadow)
+                    .shadow(Shadow {
+                        offset: [0, 0],
+                        blur: 10,
+                        spread: 5,
+                        color: hex_color!("#00000020"),
+                    })
                     .inner_margin(egui::Margin::same(10))
                     .outer_margin(egui::Margin::same(10))
                     .corner_radius(CornerRadius::same(8))
