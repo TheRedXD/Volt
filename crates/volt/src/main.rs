@@ -63,9 +63,6 @@ struct VoltApp {
     pub theme: Rc<ThemeColors>,
     pub timings_toggle: bool,
     pub show_welcome: bool,
-    pub show_browser: bool,
-    pub graph_enabled: bool,
-    pub arrange_enabled: bool,
     pub palette: Palette,
     pub notifications_tx: Sender<Notification>,
 }
@@ -112,9 +109,6 @@ impl VoltApp {
             notification_drawer: NotificationDrawer::new(rx, Rc::clone(&theme)),
             timings_toggle: false,
             show_welcome: true,
-            show_browser: true,
-            graph_enabled: false,
-            arrange_enabled: true,
             palette: Palette::new(Rc::clone(&theme)),
             theme,
             notifications_tx: tx,
@@ -167,9 +161,9 @@ impl App for VoltApp {
             ui.add(navbar(&self.theme));
         });
         TopBottomPanel::bottom("status").frame(egui::Frame::default()).show_separator_line(false).show(ctx, |ui| {
-            ui.add(status(&self.theme, &mut self.show_browser, &mut self.graph_enabled, &mut self.arrange_enabled, &mut self.central.mode));
+            ui.add(status(&self.theme, &mut self.browser.show, &mut self.central.mode));
         });
-        if self.show_browser {
+        if self.browser.show {
             SidePanel::left("browser")
                 .default_width(300.)
                 .frame(egui::Frame::default().fill(self.theme.browser))

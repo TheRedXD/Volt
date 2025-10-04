@@ -198,7 +198,7 @@ mod playlist {
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Mode {
     Playlist,
     Graph,

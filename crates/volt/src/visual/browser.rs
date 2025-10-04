@@ -148,6 +148,7 @@ pub struct Browser {
     theme: Rc<ThemeColors>,
     cached_entries: FsWatcherCache<CachedEntries>,
     cached_entry_kinds: Arc<RwLock<FsWatcherCache<EntryKind>>>,
+    pub show: bool,
 }
 
 struct CachedEntries {
@@ -292,6 +293,7 @@ impl Browser {
             theme,
             cached_entries: FsWatcherCache::default(),
             cached_entry_kinds: Arc::new(RwLock::new(FsWatcherCache::default())),
+            show: true,
         }
     }
 

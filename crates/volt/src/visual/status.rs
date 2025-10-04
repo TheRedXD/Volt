@@ -1,96 +1,78 @@
 use eframe::egui;
-use egui::{hex_color, include_image, FontFamily, Image, Label, Margin, RichText, Sense, Stroke, TextureOptions, Ui, Vec2, Widget};
+use egui::{Button, FontFamily, Image, Label, Margin, RichText, Sense, TextureOptions, Ui, Vec2, Widget, hex_color, include_image};
+use itertools::Itertools;
+use tap::Pipe;
 
 use crate::visual::central::Mode;
 
 use super::ThemeColors;
 
-pub fn status<'a, 'b>(themes: &'a ThemeColors, show_browser: &'b mut bool, graph_enabled: &'b mut bool, arrange_enabled: &'b mut bool, central_mode: &'b mut Mode) -> impl Widget + use<'a, 'b> {
+pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut Mode) -> impl Widget {
     |ui: &mut Ui| {
-        let navbar_texture_image = super::build_gradient(20, themes.navbar_background_gradient_bottom, themes.navbar_background_gradient_top);
-        let navbar_texture = ui.ctx().load_texture("navbar_texture", navbar_texture_image, TextureOptions::default());
-        
-        ui.painter().image(
-            navbar_texture.id(),
-            ui.available_rect_before_wrap(),
-            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-            egui::Color32::WHITE,
-        );
-        ui.painter().line(
-            vec![ui.available_rect_before_wrap().left_top(), ui.available_rect_before_wrap().right_top()],
-            Stroke::new(1.0, hex_color!("#353248")),
-        );
+        Image::from_texture(&ui.ctx().load_texture(
+            "navbar_texture",
+            super::build_gradient(20, themes.navbar_background_gradient_bottom, themes.navbar_background_gradient_top),
+            TextureOptions::default(),
+        ))
+        .paint_at(ui, ui.clip_rect());
         ui.horizontal(|ui| {
-            egui::Frame::default().show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    egui::Frame::new().show(ui, |ui| {
-                        ui.style_mut().spacing.item_spacing = Vec2::ZERO;
-                        egui::Frame::new().inner_margin(Margin::same(5)).show(ui, |ui| {
-                            ui.add_space(2.);
-                            egui::Frame::new().outer_margin(Margin::same(2)).show(ui, |ui| {
-                                let mut tint = themes.accent;
-                                if !*show_browser {
-                                    tint = hex_color!("#ffffff40");
-                                }
-                                let resp = ui.add(Image::new(include_image!("../images/icons/browser-collapse.svg")).fit_to_exact_size(Vec2 {x: 16., y: 16.}).tint(tint)).interact(Sense::click());
-                                if resp.clicked_by(egui::PointerButton::Primary) {
-                                    *show_browser = !*show_browser;
-                                    ui.ctx().request_repaint();
-                                }
-                            });
-                            ui.add_space(6.);
-                            ui.painter().rect_stroke(
-                                egui::Rect::from_min_max(
-                                    egui::pos2(ui.cursor().left(), ui.cursor().top() - 20. + 6.),
-                                    egui::pos2(ui.cursor().left() + 1., ui.cursor().top() + 20. + 6.),
-                                ),
-                                0.0,
-                                egui::Stroke::new(1.0, hex_color!("#353248")),
-                                egui::StrokeKind::Inside
-                            );
-                            ui.add_space(10.);
-                            ui.add(Label::new(RichText::new("Volt v0.1.0").family(FontFamily::Proportional).color(hex_color!("#777490"))).selectable(false));
-                        });
+            ui.scope(|ui| {
+                ui.style_mut().spacing.item_spacing = Vec2::ZERO;
+                egui::Frame::new().inner_margin(Margin::same(5)).show(ui, |ui| {
+                    ui.add_space(2.);
+                    egui::Frame::new().outer_margin(Margin::same(2)).show(ui, |ui| {
+                        if ui
+                            .add(
+                                Image::new(include_image!("../images/icons/browser-collapse.svg"))
+                                    .fit_to_exact_size(Vec2::splat(16.))
+                                    .tint(if *show_browser { themes.accent } else { hex_color!("#ffffff40") }),
+                            )
+                            .interact(Sense::click())
+                            .clicked_by(egui::PointerButton::Primary)
+                        {
+                            *show_browser = !*show_browser;
+                            ui.ctx().request_repaint();
+                        }
                     });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        egui::Frame::new().show(ui, |ui| {
-                            ui.style_mut().spacing.item_spacing = Vec2::ZERO;
-                            egui::Frame::new().inner_margin(Margin::same(5)).show(ui, |ui| {
-                                ui.add_space(10.);
-                                let mut graph_color = themes.accent;
-                                if !*graph_enabled { graph_color = hex_color!("#77749040") }
-                                let graph = ui.add(Label::new(RichText::new("GRAPH").family(FontFamily::Monospace).color(graph_color)).selectable(false)).interact(Sense::click());
-                                ui.add_space(10.);
-                                ui.painter().rect_stroke(
-                                    egui::Rect::from_min_max(
-                                        egui::pos2(ui.cursor().right(), ui.cursor().top() - 5. + 6.),
-                                        egui::pos2(ui.cursor().right() + 1., ui.cursor().top() + 15. + 6.),
-                                    ),
-                                    0.0,
-                                    egui::Stroke::new(1.0, hex_color!("#353248")),
-                                    egui::StrokeKind::Inside
-                                );
-                                ui.add_space(10.);
-                                let mut arrange_color = themes.accent;
-                                if !*arrange_enabled { arrange_color = hex_color!("#77749040") }
-                                let arrange = ui.add(Label::new(RichText::new("ARRANGE").family(FontFamily::Monospace).color(arrange_color)).selectable(false)).interact(Sense::click());
-                                if graph.clicked_by(egui::PointerButton::Primary) {
-                                    *graph_enabled = true;
-                                    *arrange_enabled = false;
-                                    *central_mode = Mode::Graph;
+                    ui.add_space(6.);
+                    ui.separator();
+                    ui.add_space(10.);
+                    ui.add(Label::new(RichText::new(concat!("Volt ", env!("CARGO_PKG_VERSION"))).color(hex_color!("#777490"))).selectable(false));
+                });
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.style_mut().spacing.item_spacing = Vec2::X * 10.;
+                egui::Frame::new().inner_margin(Margin::same(5)).show(ui, |ui| {
+                    enum Widget {
+                        Button(&'static str, Mode),
+                        Separator,
+                    }
+                    for widget in [("GRAPH", Mode::Graph), ("ARRANGE", Mode::Playlist)]
+                        .into_iter()
+                        .map(|(label, mode)| Widget::Button(label, mode))
+                        .pipe(|iterator| Itertools::intersperse_with(iterator, || Widget::Separator))
+                    {
+                        match widget {
+                            Widget::Button(label, mode) => {
+                                if RichText::new(label)
+                                    .family(FontFamily::Monospace)
+                                    .color(if *central_mode == mode { themes.accent } else { hex_color!("#77749040") })
+                                    .pipe(Button::new)
+                                    .frame(false)
+                                    .pipe(|button| ui.add(button))
+                                    .clicked()
+                                {
+                                    *central_mode = mode;
                                     ui.ctx().request_repaint();
                                 }
-                                if arrange.clicked_by(egui::PointerButton::Primary) {
-                                    *graph_enabled = false;
-                                    *arrange_enabled = true;
-                                    *central_mode = Mode::Playlist;
-                                    ui.ctx().request_repaint();
-                                }
-                            });
-                        });
-                    });
-                })
-            })
+                            }
+                            Widget::Separator => {
+                                ui.separator();
+                            }
+                        }
+                    }
+                });
+            });
         })
         .response
     }
