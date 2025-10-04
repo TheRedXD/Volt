@@ -18,6 +18,7 @@ use info::handle_args;
 mod info;
 mod timings;
 mod visual;
+mod shortcuts;
 
 use tap::{Pipe, Tap};
 use visual::{ThemeColors, browser::Browser, central::Central, navbar::navbar, notification::NotificationDrawer, palette::Palette, status::status};
@@ -34,7 +35,7 @@ fn main() -> eframe::Result {
         NativeOptions {
             vsync: true,
             wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
-                present_mode: eframe::wgpu::PresentMode::Immediate,
+                present_mode: eframe::wgpu::PresentMode::AutoVsync,
                 ..Default::default()
             },
             viewport: ViewportBuilder::default().with_drag_and_drop(true).with_icon(
