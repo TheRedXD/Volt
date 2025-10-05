@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{AtomExt, Button, CursorIcon, FontFamily, Image, Label, Margin, Modifiers, RichText, Sense, SizeHint, TextureOptions, Ui, Vec2, Widget, hex_color, include_image};
+use egui::{Button, CursorIcon, FontFamily, Image, Label, Margin, Modifiers, RichText, Sense, TextureOptions, Ui, Vec2, Widget, hex_color, include_image};
 use itertools::Itertools;
 use tap::Pipe;
 
@@ -54,18 +54,17 @@ pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut 
                     {
                         match widget {
                             Widget::Button(label, mode) => {
-                                let text_response = RichText::new(label)
+                                if RichText::new(label)
                                     .family(FontFamily::Monospace)
                                     .color(if *central_mode == mode { themes.accent } else { hex_color!("#77749040") })
                                     .pipe(Button::new)
                                     .frame(false)
-                                    .pipe(|button| ui.add(button));
-                                if text_response.clicked() {
+                                    .pipe(|button| ui.add(button))
+                                    .on_hover_cursor(CursorIcon::PointingHand)
+                                    .clicked()
+                                {
                                     *central_mode = mode;
                                     ui.ctx().request_repaint();
-                                }
-                                if text_response.hovered() {
-                                    ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
                                 }
                             }
                             Widget::Separator => {
