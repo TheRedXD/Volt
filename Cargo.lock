@@ -4507,7 +4507,6 @@ name = "volt"
 version = "0.1.0"
 dependencies = [
  "blerp",
- "color-hex",
  "cpal",
  "crossbeam-channel",
  "eframe",

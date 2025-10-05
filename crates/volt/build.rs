@@ -9,7 +9,7 @@ use std::{
 
 include!("src/visual/theme.rs");
 
-// FIXME: use unmultiplied instead of premultiplied (we'll have to get rid of const because of it), alpha is broken right now
+#[allow(clippy::many_single_char_names)]
 fn main() {
     let themes_dir = PathBuf::from(var("CARGO_MANIFEST_DIR").unwrap()).join("src/themes");
     println!("cargo:rerun-if-changed={}", themes_dir.display());
@@ -26,8 +26,8 @@ fn main() {
                 .iter()
                 .filter_map(|(key, value)| {
                     let key = Ident::new(key, Span::call_site());
-                    let value = value.as_str()?;
-                    Some(quote! {#key: hex_color!(#value)})
+                    let [r, g, b, a] = Color32::from_hex(value.as_str()?).unwrap().to_array();
+                    Some(quote! {#key: egui::Color32::from_rgba_premultiplied(#r, #g, #b, #a)})
                 })
                 .collect::<Vec<_>>();
             let shadow = theme_json.get("shadow").unwrap().as_object().unwrap();
@@ -45,8 +45,7 @@ fn main() {
             let [x, y] = offset;
             let blur: u8 = shadow.get("blur").unwrap().as_number().unwrap().as_u64().unwrap().try_into().unwrap();
             let spread: u8 = shadow.get("spread").unwrap().as_number().unwrap().as_u64().unwrap().try_into().unwrap();
-            let color = shadow.get("color").unwrap().as_str().unwrap();
-
+            let [r, g, b, a] = Color32::from_hex(shadow.get("color").unwrap().as_str().unwrap()).unwrap().to_array();
             quote! {
                 pub const #name: crate::visual::theme::ThemeColors = crate::visual::theme::ThemeColors {
                     #(#colors),*,
@@ -54,7 +53,7 @@ fn main() {
                         offset: [#x, #y],
                         blur: #blur,
                         spread: #spread,
-                        color: hex_color!(#color),
+                        color: egui::Color32::from_rgba_premultiplied(#r, #g, #b, #a),
                     },
                 };
             }
@@ -63,17 +62,6 @@ fn main() {
     write(
         var("OUT_DIR").unwrap() + "/themes.rs",
         quote! {
-            macro_rules! hex_color {
-                ($s:literal) => {{
-                    let array = color_hex::color_from_hex!($s);
-                    match array.as_slice() {
-                        [r, g, b] => egui::Color32::from_rgb(*r, *g, *b),
-                        [r, g, b, a] => egui::Color32::from_rgba_premultiplied(*r, *g, *b, *a),
-                        _ => panic!("Invalid hex color length: expected 3 (RGB) or 4 (RGBA) bytes"),
-                    }
-                }};
-            }
-
             #(#themes),*
         }
         .to_string(),

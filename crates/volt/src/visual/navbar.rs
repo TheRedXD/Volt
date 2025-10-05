@@ -110,7 +110,7 @@ pub fn navbar(themes: &ThemeColors) -> impl Widget + use<'_> {
                             .inner_margin(egui::Margin::same(5))
                             .stroke(Stroke::new(1., hex_color!("#35324840")))
                             .corner_radius(egui::CornerRadius::same(5))
-                            // .fill(themes.navbar_widget)
+                            .fill(themes.navbar_widget)
                             .show(ui, |ui| {
                                 egui::Frame::new().inner_margin(egui::Margin::symmetric(5, -6)).show(ui, |ui| {
                                     ui.add(Image::new(include_image!("../images/icons/navbar-icon.svg")).fit_to_exact_size(Vec2::splat(30.)));
@@ -129,7 +129,7 @@ pub fn navbar(themes: &ThemeColors) -> impl Widget + use<'_> {
                                     .inner_margin(egui::Margin::same(5))
                                     .stroke(Stroke::new(1., hex_color!("#35324840")))
                                     .corner_radius(egui::CornerRadius::same(5))
-                                    // .fill(themes.navbar_widget)
+                                    .fill(themes.navbar_widget)
                                     .show(ui, |ui| {
                                         ui.add(
                                             Image::new(include_image!("../images/icons/play-icon.svg"))
