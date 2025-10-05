@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{Color32, FontId, Image, Sense, Shadow, Stroke, TextureOptions, Ui, Vec2, Widget, containers::menu::MenuButton, hex_color, include_image};
+use egui::{Color32, FontId, Image, Sense, Stroke, TextureOptions, Ui, Vec2, Widget, containers::menu::MenuButton, hex_color, include_image};
 use tap::Tap;
 
 use super::theme::ThemeColors;
@@ -18,70 +18,83 @@ pub fn navbar_menu_buttons(ui: &mut Ui, theme: &ThemeColors) -> egui::Response {
                 ui.style_mut().override_font_id = Some(FontId::proportional(12.));
                 ui.style_mut().visuals.popup_shadow = theme.shadow.tap_mut(|shadow| shadow.color = hex_color!("#00000020"));
 
-                ui.add_space(2.0);
-                let mut click_no_focus = Sense::click();
-                click_no_focus.remove(Sense::focusable_noninteractive());
-                let mut file_menu = MenuButton::new("File");
-                file_menu.button = file_menu.button.sense(click_no_focus);
-                file_menu.ui(ui, |ui| {
-                    if ui.button("New").clicked() {
-                        todo!();
-                    }
-                    if ui.button("Open").clicked() {
-                        todo!();
-                    }
-                    if ui.button("Save").clicked() {
-                        todo!();
-                    }
-                    if ui.button("Exit").clicked() {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
-                ui.add_space(2.0);
-                let mut edit_menu = MenuButton::new("Edit");
-                edit_menu.button = edit_menu.button.sense(click_no_focus);
-                edit_menu.ui(ui, |ui| {
-                    if ui.button("Undo").clicked() {
-                        todo!();
-                    }
-                    if ui.button("Redo").clicked() {
-                        todo!();
-                    }
-                    if ui.button("Cut").clicked() {
-                        todo!();
-                    }
-                    if ui.button("Copy").clicked() {
-                        todo!();
-                    }
-                    if ui.button("Paste").clicked() {
-                        todo!();
-                    }
-                });
-                ui.add_space(2.0);
-                let mut view_menu = MenuButton::new("View");
-                view_menu.button = view_menu.button.sense(click_no_focus);
-                view_menu.ui(ui, |ui| {
-                    if ui.button("Zoom In").clicked() {
-                        todo!();
-                    }
-                    if ui.button("Zoom Out").clicked() {
-                        todo!();
-                    }
-                    if ui.button("Fit to Screen").clicked() {
-                        todo!();
-                    }
-                });
-                ui.add_space(2.0);
-                let mut help_menu = MenuButton::new("Help");
-                help_menu.button = help_menu.button.sense(click_no_focus);
-                help_menu.ui(ui, |ui| {
-                    if ui.button("Documentation").clicked() {
-                        todo!();
-                    }
-                    if ui.button("About").clicked() {
-                        todo!();
-                    }
-                });
+                macro_rules! menus {
+                    [
+                        $(
+                            $menu_name:expr => [
+                                $(
+                                    $item_name:expr => $action:block
+                                ),*
+                                $(,)?
+                            ]
+                        ),*
+                        $(,)?
+                    ] => {
+                        $(
+                            ui.add_space(2.0);
+                            let mut menu = MenuButton::new($menu_name);
+                            menu.button = menu.button.sense(Sense::CLICK);
+                            unhygienic2::unhygienic! {
+                                menu.ui(ui, |ui| {
+                                    $(
+                                        if ui.button($item_name).clicked() $action
+                                    )*
+                                });
+                            }
+                        )*
+                    };
+                }
+
+                menus![
+                    "File" => [
+                        "New" => {
+                            todo!();
+                        },
+                        "Open" => {
+                            todo!();
+                        },
+                        "Save" => {
+                            todo!();
+                        },
+                        "Exit" => { ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close); },
+                    ],
+                    "Edit" => [
+                        "Undo" => {
+                            todo!();
+                        },
+                        "Redo" => {
+                            todo!();
+                        },
+                        "Cut" => {
+                            todo!();
+                        },
+                        "Copy" => {
+                            todo!();
+                        },
+                        "Paste" => {
+                            todo!();
+                        },
+                    ],
+                    "View" => [
+                        "Zoom In" => {
+                            todo!();
+                        },
+                        "Zoom Out" => {
+                            todo!();
+                        },
+                        "Fit to Screen" => {
+                            todo!();
+                        },
+                    ],
+                    "Help" => [
+                        "Documentation" => {
+                            todo!();
+                        },
+                        "About" => {
+                            todo!();
+                        },
+                    ],
+                ];
             });
         })
         .response

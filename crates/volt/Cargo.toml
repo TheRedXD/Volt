@@ -27,6 +27,7 @@ pastey = "0.1.1"
 unicode-truncate = "2.0.0"
 symphonia = { version = "0.5.4", features = ["all"] }
 strsim = "0.11.1"
+unhygienic2 = "0.1.0"
 
 # TEMPORARY FIX: Fix some platform support
 [target.'cfg(target_os = "linux")'.dependencies]

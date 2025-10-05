@@ -4357,6 +4357,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "unhygienic2"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02a30ee73576cf3db4ccbc211b533ae0285dafdaa48d5fcf4d63123c66a61cd5"
+
+[[package]]
 name = "unicase"
 version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4530,6 +4536,7 @@ dependencies = [
  "tap",
  "tracing",
  "tracing-subscriber",
+ "unhygienic2",
  "unicode-truncate",
  "wgpu",
 ]
