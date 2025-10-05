@@ -7,7 +7,10 @@ use std::{
 };
 
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
-use egui::{hex_color, Align2, Area, CentralPanel, Context, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Modifiers, Popup, SidePanel, Stroke, TextStyle, TopBottomPanel, Vec2, ViewportBuilder};
+use egui::{
+    Align2, Area, CentralPanel, Context, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Modifiers, Popup, SidePanel, Stroke, TextStyle, TopBottomPanel, Vec2, ViewportBuilder,
+    hex_color,
+};
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;
 use image::{ImageFormat, ImageReader};
@@ -19,7 +22,7 @@ mod timings;
 mod visual;
 
 use tap::{Pipe, Tap};
-use visual::{theme::ThemeColors, browser::Browser, central::Central, navbar::navbar, notification::NotificationDrawer, palette::Palette, status::status};
+use visual::{browser::Browser, central::Central, navbar::navbar, notification::NotificationDrawer, palette::Palette, status::status, theme::ThemeColors};
 
 use crate::visual::{dialog::dialog, notification::Notification};
 
@@ -127,12 +130,7 @@ impl App for VoltApp {
                 ui.style_mut().spacing.button_padding = Vec2 { x: 12., y: 4. };
                 ui.style_mut().visuals.widgets.hovered.weak_bg_fill = hex_color!("#ffffff10");
                 ui.style_mut().visuals.widgets.active.weak_bg_fill = hex_color!("#ffffff20");
-                let ok_button = egui::Button::new("Ok").corner_radius(10.);
-                let ok_response = ui.add(ok_button);
-                if ok_response.hovered() {
-                    ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
-                }
-                if ok_response.clicked() {
+                if ui.add(egui::Button::new("Ok").corner_radius(10.)).on_hover_cursor(CursorIcon::PointingHand).clicked() {
                     ui.close();
                 }
             });
@@ -154,11 +152,8 @@ impl App for VoltApp {
         }
         let ctrl_b_pressed = ctx.input_mut(|i| {
             i.consume_shortcut(&egui::KeyboardShortcut {
-                modifiers: Modifiers {
-                    ctrl: true,
-                    ..Default::default()
-                },
-                logical_key: egui::Key::B
+                modifiers: Modifiers { ctrl: true, ..Default::default() },
+                logical_key: egui::Key::B,
             })
         });
         if ctrl_b_pressed {
