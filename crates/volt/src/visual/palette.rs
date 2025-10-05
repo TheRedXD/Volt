@@ -27,7 +27,7 @@ impl Palette {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut Ui, timings_toggle: &mut bool, notifications_tx: &Sender<Notification>) {
+    pub fn ui(&mut self, ui: &mut Ui, notifications_tx: &Sender<Notification>) {
         if ui.ctx().input_mut(|i| i.consume_shortcut(&COMMAND_PALETTE_SHORTCUT)) {
             self.text.clear();
             ui.ctx().memory_mut(|mem| mem.request_focus(self.field_id));
@@ -37,17 +37,15 @@ impl Palette {
         let mut commands = [
             (
                 "timings",
-                &mut (|| {
-                    *timings_toggle = !*timings_toggle;
-                }) as &mut dyn FnMut(),
+                &mut (|ui: &mut Ui| ui.ctx().memory_mut(|mem| *mem.data.get_temp_mut_or_default::<bool>("timings".into()) ^= true)) as &mut dyn FnMut(&mut Ui),
             ),
-            ("info", &mut || {
+            ("info", &mut |_| {
                 info::dump();
                 notifications_tx
                     .send(Notification::new("Dumped system info into console!".into(), Some(Duration::from_secs(5))))
                     .unwrap();
             }),
-            ("bug", &mut || {
+            ("bug", &mut |_| {
                 println!("!!!!!!\nWhen making your bug report, add the information below!\n!!!!!!");
                 info::dump();
                 notifications_tx
@@ -72,7 +70,7 @@ impl Palette {
 
         if ui.ctx().input_mut(|i| i.key_pressed(Key::Enter)) {
             self.showing = false;
-            commands[0].1();
+            commands[0].1(ui);
         }
 
         if self.showing {
@@ -104,7 +102,7 @@ impl Palette {
                         ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
                             for command in commands.iter_mut().take(5) {
                                 if ui.button(command.0).clicked() {
-                                    command.1();
+                                    command.1(ui);
                                     self.showing = false;
                                 }
                             }

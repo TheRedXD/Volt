@@ -61,7 +61,6 @@ struct VoltApp {
     pub central: Central,
     pub notification_drawer: NotificationDrawer,
     pub theme: Rc<ThemeColors>,
-    pub timings_toggle: bool,
     pub palette: Palette,
     pub notifications_tx: Sender<Notification>,
 }
@@ -108,7 +107,6 @@ impl VoltApp {
             browser: Browser::new(Rc::clone(&theme)),
             central: Central::new(),
             notification_drawer: NotificationDrawer::new(rx, Rc::clone(&theme)),
-            timings_toggle: false,
             palette: Palette::new(Rc::clone(&theme)),
             theme,
             notifications_tx: tx,
@@ -180,13 +178,13 @@ impl App for VoltApp {
             .default_pos(ctx.screen_rect().center_top())
             .show(ctx, |ui| {
                 ui.allocate_ui(Vec2::X * ctx.screen_rect().width() * 0.5, |ui| {
-                    self.palette.ui(ui, &mut self.timings_toggle, &self.notifications_tx);
+                    self.palette.ui(ui, &self.notifications_tx);
                 })
             });
 
         timings::set_render_time(time_render_start.elapsed());
 
-        if self.timings_toggle {
+        if ctx.memory_mut(|mem| *mem.data.get_temp_mut_or_default("timings".into())) {
             timings::show_timings(ctx, "Timings");
         }
     }
