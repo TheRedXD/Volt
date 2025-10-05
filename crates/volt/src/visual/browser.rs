@@ -551,17 +551,22 @@ impl Browser {
                     #[allow(clippy::cast_possible_truncation, reason = "this is a visual effect")]
                     #[allow(clippy::cast_precision_loss, reason = "this is a visual effect")]
                     ui.add_space(INDENT_SIZE * depth as f32);
-                    match kind {
-                        EntryKind::Audio => self.add_audio_entry(&path, ui, &Rc::clone(&self.theme), button),
-                        EntryKind::File => Self::add_file(ui, button(&self.theme)),
-                        EntryKind::Directory => {
-                            ui.horizontal(|ui| ui.add(self.collapsing_header_icon(f32::from(self.expanded_paths.contains(&path)))) | ui.add(button(&self.theme)))
-                                .inner
+                    let frame_response = egui::Frame::default().show(ui, |ui| {
+                        ui.set_min_size(Vec2::new(browser_width - (INDENT_SIZE * depth as f32) - (2. * INDENT_SIZE), Self::ENTRY_HEIGHT));
+                        match kind {
+                            EntryKind::Audio => self.add_audio_entry(&path, ui, &Rc::clone(&self.theme), button),
+                            EntryKind::File => Self::add_file(ui, button(&self.theme)),
+                            EntryKind::Directory => {
+                                ui.horizontal(|ui| ui.add(self.collapsing_header_icon(f32::from(self.expanded_paths.contains(&path)))) | ui.add(button(&self.theme)))
+                                    .inner
+                            }
                         }
-                    }
-                })
+                    });
+
+                    ui.interact(frame_response.response.rect, frame_response.response.id, Sense::click())
+                        .union(frame_response.response)
+                }).inner
             })
-            .inner
             .inner;
         if response.clicked() {
             match kind {
@@ -579,6 +584,14 @@ impl Browser {
                     }
                 }
             }
+        }
+        if response.hovered() {
+            ui.painter().rect_filled(
+                response.rect,
+                2.0,
+                self.theme.browser_unselected_hover_button_fg.linear_multiply(0.2),
+            );
+            ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
         }
         response
     }

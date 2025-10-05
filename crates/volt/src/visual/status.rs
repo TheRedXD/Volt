@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{hex_color, include_image, Button, FontFamily, Image, Label, Margin, Modifiers, RichText, Sense, TextureOptions, Ui, Vec2, Widget};
+use egui::{hex_color, include_image, Button, CursorIcon, FontFamily, Image, Label, Margin, Modifiers, RichText, Sense, TextureOptions, Ui, Vec2, Widget};
 use itertools::Itertools;
 use tap::Pipe;
 
@@ -19,17 +19,19 @@ pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut 
                 egui::Frame::new().inner_margin(Margin::same(5)).show(ui, |ui| {
                     ui.add_space(2.);
                     egui::Frame::new().outer_margin(Margin::same(2)).show(ui, |ui| {
-                        if ui
+                        let browser_collapse_resp = ui
                             .add(
                                 Image::new(include_image!("../images/icons/browser-collapse.svg"))
                                     .fit_to_exact_size(Vec2::splat(16.))
                                     .tint(if *show_browser { themes.accent } else { hex_color!("#ffffff40") }),
                             )
-                            .interact(Sense::click())
-                            .clicked_by(egui::PointerButton::Primary)
-                        {
+                            .interact(Sense::click());
+                        if browser_collapse_resp.clicked() {
                             *show_browser = !*show_browser;
                             ui.ctx().request_repaint();
+                        }
+                        if browser_collapse_resp.hovered() {
+                            ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
                         }
                     });
                     ui.add_space(6.);
@@ -53,16 +55,18 @@ pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut 
                     {
                         match widget {
                             Widget::Button(label, mode) => {
-                                if RichText::new(label)
+                                let text_response = RichText::new(label)
                                     .family(FontFamily::Monospace)
                                     .color(if *central_mode == mode { themes.accent } else { hex_color!("#77749040") })
                                     .pipe(Button::new)
                                     .frame(false)
-                                    .pipe(|button| ui.add(button))
-                                    .clicked()
-                                {
+                                    .pipe(|button| ui.add(button));
+                                if text_response.clicked() {
                                     *central_mode = mode;
                                     ui.ctx().request_repaint();
+                                }
+                                if text_response.hovered() {
+                                    ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
                                 }
                             }
                             Widget::Separator => {

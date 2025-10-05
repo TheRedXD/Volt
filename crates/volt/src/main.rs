@@ -127,7 +127,12 @@ impl App for VoltApp {
                 ui.style_mut().spacing.button_padding = Vec2 { x: 12., y: 4. };
                 ui.style_mut().visuals.widgets.hovered.weak_bg_fill = hex_color!("#ffffff10");
                 ui.style_mut().visuals.widgets.active.weak_bg_fill = hex_color!("#ffffff20");
-                if ui.add(egui::Button::new("Ok").corner_radius(10.)).clicked() {
+                let ok_button = egui::Button::new("Ok").corner_radius(10.);
+                let ok_response = ui.add(ok_button);
+                if ok_response.hovered() {
+                    ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
+                }
+                if ok_response.clicked() {
                     ui.close();
                 }
             });
