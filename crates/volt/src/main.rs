@@ -139,10 +139,12 @@ impl App for VoltApp {
             ui.add(navbar(&self.theme));
         });
         TopBottomPanel::bottom("status").frame(egui::Frame::default()).show(ctx, |ui| {
-            ui.add(status(&self.theme, &mut self.browser.show, &mut self.central.mode));
+            ui.add(status(&self.theme, &mut self.central.mode));
         });
-        if self.browser.show {
-            SidePanel::left("browser")
+
+        let browser_id = egui::Id::new("browser");
+        if ctx.memory_mut(|mem| *mem.data.get_temp_mut_or(browser_id, true)) {
+            SidePanel::left(browser_id)
                 .default_width(300.)
                 .frame(egui::Frame::default().fill(self.theme.browser))
                 .show_separator_line(true)
@@ -157,7 +159,7 @@ impl App for VoltApp {
             })
         });
         if ctrl_b_pressed {
-            self.browser.show = !self.browser.show;
+            ctx.memory_mut(|mem| *mem.data.get_temp_mut_or(browser_id, true) ^= true);
             ctx.request_repaint();
         }
         CentralPanel::default().frame(egui::Frame::default().fill(self.theme.central_background)).show(ctx, |ui| {

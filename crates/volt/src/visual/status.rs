@@ -5,7 +5,7 @@ use tap::Pipe;
 
 use crate::visual::{central::Mode, theme::ThemeColors};
 
-pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut Mode) -> impl Widget {
+pub fn status(themes: &ThemeColors, central_mode: &mut Mode) -> impl Widget {
     |ui: &mut Ui| {
         Image::from_texture(&ui.ctx().load_texture(
             "navbar_texture",
@@ -20,16 +20,18 @@ pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut 
                     ui.add_space(2.);
                     egui::Frame::new().outer_margin(Margin::same(2)).show(ui, |ui| {
                         if ui
-                            .add(
-                                Image::new(include_image!("../images/icons/browser-collapse.svg"))
-                                    .fit_to_exact_size(Vec2::splat(16.))
-                                    .tint(if *show_browser { themes.accent } else { hex_color!("#ffffff40") }),
-                            )
+                            .add(Image::new(include_image!("../images/icons/browser-collapse.svg")).fit_to_exact_size(Vec2::splat(16.)).tint(
+                                if ui.ctx().memory_mut(|mem| *mem.data.get_temp_mut_or("browser".into(), true)) {
+                                    themes.accent
+                                } else {
+                                    hex_color!("#ffffff40")
+                                },
+                            ))
                             .interact(Sense::click())
                             .on_hover_cursor(CursorIcon::PointingHand)
                             .clicked()
                         {
-                            *show_browser = !*show_browser;
+                            ui.ctx().memory_mut(|mem| *mem.data.get_temp_mut_or("browser".into(), true) ^= true);
                             ui.ctx().request_repaint();
                         }
                     });
