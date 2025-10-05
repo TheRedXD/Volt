@@ -1,9 +1,10 @@
 use eframe::egui;
-use egui::{containers::menu::MenuButton, hex_color, include_image, Color32, FontId, Image, Sense, Shadow, Stroke, TextureOptions, Ui, Vec2, Widget};
+use egui::{Color32, FontId, Image, Sense, Shadow, Stroke, TextureOptions, Ui, Vec2, Widget, containers::menu::MenuButton, hex_color, include_image};
+use tap::Tap;
 
 use super::theme::ThemeColors;
 
-pub fn navbar_menu_buttons(ui: &mut Ui) -> egui::Response {
+pub fn navbar_menu_buttons(ui: &mut Ui, theme: &ThemeColors) -> egui::Response {
     egui::Frame::new()
         .show(ui, |ui| {
             ui.scope(|ui| {
@@ -13,14 +14,11 @@ pub fn navbar_menu_buttons(ui: &mut Ui) -> egui::Response {
                 ui.visuals_mut().widgets.inactive.bg_stroke = Stroke::NONE;
                 ui.visuals_mut().widgets.hovered.bg_stroke = Stroke::new(1., hex_color!("#ffffff20"));
                 ui.visuals_mut().widgets.active.bg_stroke = Stroke::new(1., hex_color!("#ffffff30"));
-                ui.style_mut().spacing.button_padding = Vec2 {x: 6., y: 2.};
+                ui.style_mut().spacing.button_padding = Vec2 { x: 6., y: 2. };
                 ui.style_mut().override_font_id = Some(FontId::proportional(12.));
+                ui.style_mut().visuals.popup_shadow = theme.shadow.tap_mut(|shadow| shadow.color = hex_color!("#00000020"));
+
                 ui.add_space(2.0);
-                let mut popup_shadow = Shadow::default();
-                popup_shadow.blur = 10;
-                popup_shadow.color = hex_color!("#00000010");
-                popup_shadow.spread = 5;
-                ui.style_mut().visuals.popup_shadow = popup_shadow;
                 let mut click_no_focus = Sense::click();
                 click_no_focus.remove(Sense::focusable_noninteractive());
                 let mut file_menu = MenuButton::new("File");
@@ -89,9 +87,9 @@ pub fn navbar_menu_buttons(ui: &mut Ui) -> egui::Response {
         .response
 }
 
-pub fn navbar(themes: &ThemeColors) -> impl Widget + use<'_> {
+pub fn navbar(theme: &ThemeColors) -> impl Widget + use<'_> {
     |ui: &mut Ui| {
-        let navbar_texture_image = super::build_gradient(40, themes.navbar_background_gradient_top, themes.navbar_background_gradient_bottom);
+        let navbar_texture_image = super::build_gradient(40, theme.navbar_background_gradient_top, theme.navbar_background_gradient_bottom);
         let navbar_texture = ui.ctx().load_texture("navbar_texture", navbar_texture_image, TextureOptions::default());
 
         ui.painter().image(
@@ -110,7 +108,7 @@ pub fn navbar(themes: &ThemeColors) -> impl Widget + use<'_> {
                             .inner_margin(egui::Margin::same(5))
                             .stroke(Stroke::new(1., hex_color!("#35324840")))
                             .corner_radius(egui::CornerRadius::same(5))
-                            .fill(themes.navbar_widget)
+                            .fill(theme.navbar_widget)
                             .show(ui, |ui| {
                                 egui::Frame::new().inner_margin(egui::Margin::symmetric(5, -6)).show(ui, |ui| {
                                     ui.add(Image::new(include_image!("../images/icons/navbar-icon.svg")).fit_to_exact_size(Vec2::splat(30.)));
@@ -119,7 +117,7 @@ pub fn navbar(themes: &ThemeColors) -> impl Widget + use<'_> {
                                     ui.add_space(2.0);
                                     ui.add(egui::Separator::default().vertical().grow(7.).spacing(16.));
                                 });
-                                navbar_menu_buttons(ui);
+                                navbar_menu_buttons(ui, theme);
                                 ui.add_space(8.0);
                             });
                         ui.centered_and_justified(|ui| {
@@ -129,7 +127,7 @@ pub fn navbar(themes: &ThemeColors) -> impl Widget + use<'_> {
                                     .inner_margin(egui::Margin::same(5))
                                     .stroke(Stroke::new(1., hex_color!("#35324840")))
                                     .corner_radius(egui::CornerRadius::same(5))
-                                    .fill(themes.navbar_widget)
+                                    .fill(theme.navbar_widget)
                                     .show(ui, |ui| {
                                         ui.add(
                                             Image::new(include_image!("../images/icons/play-icon.svg"))
