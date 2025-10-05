@@ -29,8 +29,8 @@ use tracing::{error, trace};
 use unicode_truncate::UnicodeTruncateStr;
 
 use egui::{
-    Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke, Ui, UiBuilder,
-    Vec2, Widget,
+    Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke, Ui, UiBuilder, Vec2,
+    Widget,
     emath::{self, TSTransform},
     hex_color, include_image, vec2,
 };
@@ -546,26 +546,24 @@ impl Browser {
             }))
         };
         let response = ui
-            .allocate_ui(vec2(f32::INFINITY, Self::ENTRY_HEIGHT), |ui| {
+            .allocate_ui(vec2(ui.available_width(), Self::ENTRY_HEIGHT), |ui| {
                 ui.horizontal(|ui| {
                     #[allow(clippy::cast_possible_truncation, reason = "this is a visual effect")]
                     #[allow(clippy::cast_precision_loss, reason = "this is a visual effect")]
                     ui.add_space(INDENT_SIZE * depth as f32);
-                    let frame_response = egui::Frame::default().show(ui, |ui| {
-                        ui.set_min_size(Vec2::new(browser_width - (INDENT_SIZE * depth as f32) - (2. * INDENT_SIZE), Self::ENTRY_HEIGHT));
-                        match kind {
+                    egui::Frame::new()
+                        .show(ui, |ui| match kind {
                             EntryKind::Audio => self.add_audio_entry(&path, ui, &Rc::clone(&self.theme), button),
                             EntryKind::File => Self::add_file(ui, button(&self.theme)),
                             EntryKind::Directory => {
                                 ui.horizontal(|ui| ui.add(self.collapsing_header_icon(f32::from(self.expanded_paths.contains(&path)))) | ui.add(button(&self.theme)))
                                     .inner
                             }
-                        }
-                    });
-
-                    ui.interact(frame_response.response.rect, frame_response.response.id, Sense::click())
-                        .union(frame_response.response)
-                }).inner
+                        })
+                        .inner
+                        | ui.allocate_response(ui.available_size(), Sense::click())
+                })
+                .inner
             })
             .inner;
         if response.clicked() {
@@ -586,11 +584,7 @@ impl Browser {
             }
         }
         if response.hovered() {
-            ui.painter().rect_filled(
-                response.rect,
-                2.0,
-                self.theme.browser_unselected_hover_button_fg.linear_multiply(0.2),
-            );
+            ui.painter().rect_filled(response.rect, 2.0, self.theme.browser_unselected_hover_button_fg.linear_multiply(0.2));
             ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
         }
         response
@@ -632,7 +626,7 @@ impl Browser {
             dnd_response | response
         };
         if let Some(data) = self.preview.data()
-        && self.preview.path.as_ref().is_some_and(|previewing| **previewing == *path)
+            && self.preview.path.as_ref().is_some_and(|previewing| **previewing == *path)
         {
             ui.ctx().request_repaint();
             ui.painter().rect_filled(
