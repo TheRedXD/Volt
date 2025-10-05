@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{hex_color, include_image, Button, CursorIcon, FontFamily, Image, Label, Margin, Modifiers, RichText, Sense, TextureOptions, Ui, Vec2, Widget};
+use egui::{AtomExt, Button, CursorIcon, FontFamily, Image, Label, Margin, Modifiers, RichText, Sense, SizeHint, TextureOptions, Ui, Vec2, Widget, hex_color, include_image};
 use itertools::Itertools;
 use tap::Pipe;
 
@@ -19,19 +19,18 @@ pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut 
                 egui::Frame::new().inner_margin(Margin::same(5)).show(ui, |ui| {
                     ui.add_space(2.);
                     egui::Frame::new().outer_margin(Margin::same(2)).show(ui, |ui| {
-                        let browser_collapse_resp = ui
+                        if ui
                             .add(
                                 Image::new(include_image!("../images/icons/browser-collapse.svg"))
                                     .fit_to_exact_size(Vec2::splat(16.))
                                     .tint(if *show_browser { themes.accent } else { hex_color!("#ffffff40") }),
                             )
-                            .interact(Sense::click());
-                        if browser_collapse_resp.clicked() {
+                            .interact(Sense::click())
+                            .on_hover_cursor(CursorIcon::PointingHand)
+                            .clicked()
+                        {
                             *show_browser = !*show_browser;
                             ui.ctx().request_repaint();
-                        }
-                        if browser_collapse_resp.hovered() {
-                            ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
                         }
                     });
                     ui.add_space(6.);
@@ -76,11 +75,8 @@ pub fn status(themes: &ThemeColors, show_browser: &mut bool, central_mode: &mut 
                     }
                     let ctrl_tab_pressed = ui.ctx().input_mut(|i| {
                         i.consume_shortcut(&egui::KeyboardShortcut {
-                            modifiers: Modifiers {
-                                ctrl: true,
-                                ..Default::default()
-                            },
-                            logical_key: egui::Key::Tab
+                            modifiers: Modifiers { ctrl: true, ..Default::default() },
+                            logical_key: egui::Key::Tab,
                         })
                     });
                     if ctrl_tab_pressed {
