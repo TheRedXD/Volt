@@ -179,9 +179,32 @@ impl Browser {
     // TODO move some of this to blerp
     #[allow(clippy::too_many_lines)]
     pub fn new(theme: Rc<ThemeColors>) -> Self {
+        let platform = if cfg!(target_os = "windows") {
+            "windows"
+        } else if cfg!(target_os = "macos") {
+            "macos"
+        } else if cfg!(target_os = "linux") {
+            "linux"
+        } else {
+            "unknown"
+        };
         Self {
             selected_category: Category::Files,
-            open_paths: vec![PathBuf::from_str("/").unwrap()],
+            open_paths: match platform {
+                "windows" => {
+                    let mut drives = Vec::new();
+                    for letter in b'A'..=b'Z' {
+                        let drive_path = format!("{}:\\", letter as char);
+                        if Path::new(&drive_path).exists() {
+                            drives.push(PathBuf::from(drive_path));
+                        }
+                    }
+                    drives
+                }
+                _ => {
+                    vec![PathBuf::from_str("/").unwrap()]
+                }
+            },
             expanded_paths: Vec::new(),
             preview: {
                 let (path_tx, path_rx) = unbounded::<Arc<Path>>();
