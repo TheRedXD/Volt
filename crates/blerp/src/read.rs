@@ -92,6 +92,11 @@ impl Reader {
         let mut channels = output.into_iter().map(IntoIterator::into_iter).collect_vec();
         from_fn(move || channels.iter_mut().map(Iterator::next).collect::<Option<Vec<_>>>()).flatten().pipe(Ok)
     }
+
+    #[must_use]
+    pub fn sample_rate(&self) -> Option<u32> {
+        self.track_decoders.iter().filter_map(|decoder| decoder.codec_params().sample_rate).unique().exactly_one().ok()
+    }
 }
 
 pub struct TrackReader {

@@ -2,6 +2,7 @@ use blerp::{
     read::Reader,
     streaming::{AudioStream, DeviceManager, SampleBuffer, StreamCommand, StreamingError},
 };
+use cpal::StreamConfig;
 use crossbeam_channel::{Receiver, Sender, TryRecvError, unbounded};
 use itertools::Itertools;
 use std::{
@@ -16,6 +17,7 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+use tap::Tap;
 use tracing::error;
 
 #[derive(Debug, thiserror::Error)]
@@ -127,6 +129,7 @@ impl Drop for Preview {
     }
 }
 
+// TODO handle channel send/recv errors better (`let _ = ...`)
 fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option<PreviewData>>, is_running: &AtomicBool) -> PreviewResult<()> {
     let device_manager = DeviceManager::new()?;
     let Some(device) = device_manager.get_default_device() else {
@@ -150,10 +153,12 @@ fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option
                         started_playing: Instant::now(),
                         path: Some(Arc::new(path)),
                     });
-                    current_reader = Some(reader);
-
                     let _ = command_tx.send(StreamCommand::Start);
+                    let _ = command_tx.send(StreamCommand::UpdateConfig(
+                        audio_stream.config().tap_mut(|config| config.sample_rate.0 = reader.sample_rate().unwrap()),
+                    ));
                     let _ = data_tx.send(current_data.clone());
+                    current_reader = Some(reader);
                 }
                 Err(e) => {
                     error!("Failed to load audio file: {}", e);

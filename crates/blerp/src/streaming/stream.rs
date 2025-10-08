@@ -414,6 +414,10 @@ impl AudioStream {
 
         Ok(stream)
     }
+
+    pub fn config(&self) -> StreamConfig {
+        self.config.clone()
+    }
 }
 
 impl Drop for AudioStream {
