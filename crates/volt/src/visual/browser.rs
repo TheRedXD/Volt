@@ -9,8 +9,9 @@ use open::that_detached;
 use std::{
     borrow::Cow,
     collections::HashMap,
+    convert::identity,
     f32::consts::FRAC_PI_2,
-    fs::{File, read_dir},
+    fs::{File, exists, read_dir},
     iter::Iterator,
     ops::BitOr,
     path::{Path, PathBuf},
@@ -179,29 +180,17 @@ impl Browser {
     // TODO move some of this to blerp
     #[allow(clippy::too_many_lines)]
     pub fn new(theme: Rc<ThemeColors>) -> Self {
-        let platform = if cfg!(target_os = "windows") {
-            "windows"
-        } else if cfg!(target_os = "macos") {
-            "macos"
-        } else if cfg!(target_os = "linux") {
-            "linux"
-        } else {
-            "unknown"
-        };
         Self {
             selected_category: Category::Files,
-            open_paths: match platform {
-                "windows" => {
-                    let mut drives = Vec::new();
-                    for letter in b'A'..=b'Z' {
-                        let drive_path = format!("{}:\\", letter as char);
-                        if Path::new(&drive_path).exists() {
-                            drives.push(PathBuf::from(drive_path));
-                        }
-                    }
-                    drives
+            open_paths: {
+                #[cfg(target_os = "windows")]
+                {
+                    (b'A'..=b'Z')
+                        .filter_map(|letter| format!(r"{}:\", letter as char).pipe(PathBuf::from).pipe(Some).filter(|drive| matches!(exists(drive), Ok(true))))
+                        .collect()
                 }
-                _ => {
+                #[cfg(not(target_os = "windows"))]
+                {
                     vec![PathBuf::from_str("/").unwrap()]
                 }
             },
