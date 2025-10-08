@@ -153,6 +153,7 @@ fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option
                         started_playing: Instant::now(),
                         path: Some(Arc::new(path)),
                     });
+                    buffer.clear();
                     let _ = command_tx.send(StreamCommand::Start);
                     let _ = command_tx.send(StreamCommand::UpdateConfig(
                         audio_stream.config().tap_mut(|config| config.sample_rate.0 = reader.sample_rate().unwrap()),
@@ -178,6 +179,7 @@ fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option
         {
             let _ = command_tx.send(StreamCommand::Stop);
             let _ = data_tx.send(None);
+            current_reader = None;
         }
 
         if let Err(error) = audio_stream.process_commands() {

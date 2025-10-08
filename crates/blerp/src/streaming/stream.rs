@@ -415,6 +415,7 @@ impl AudioStream {
         Ok(stream)
     }
 
+    #[must_use]
     pub fn config(&self) -> StreamConfig {
         self.config.clone()
     }

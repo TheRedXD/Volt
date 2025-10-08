@@ -9,17 +9,18 @@ use std::{
 use itertools::Itertools;
 use symphonia::{
     core::{
-        audio::{AudioBuffer, Channels, SampleBuffer},
+        audio::{AudioBuffer, Channels},
         codecs::{CodecParameters, Decoder, DecoderOptions},
         errors::Result as SymphoniaResult,
         formats::{FormatOptions, FormatReader},
         io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions},
         meta::MetadataOptions,
         probe::Hint,
+        units::Time,
     },
     default::{get_codecs, get_probe},
 };
-use tap::Pipe;
+use tap::{Pipe, Tap};
 
 pub struct Reader {
     format_reader: Box<dyn FormatReader>,
