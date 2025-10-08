@@ -17,7 +17,6 @@ use std::{
     ops::BitOr,
     path::{Path, PathBuf},
     rc::Rc,
-    str::FromStr,
     string::ToString,
     sync::{Arc, RwLock},
     task::Poll,
@@ -133,12 +132,14 @@ impl Browser {
             open_paths: {
                 #[cfg(target_os = "windows")]
                 {
+                    use std::fs::exists;
                     (b'A'..=b'Z')
                         .filter_map(|letter| format!(r"{}:\", letter as char).pipe(PathBuf::from).pipe(Some).filter(|drive| matches!(exists(drive), Ok(true))))
                         .collect()
                 }
                 #[cfg(not(target_os = "windows"))]
                 {
+                    use std::str::FromStr;
                     vec![PathBuf::from_str("/").unwrap()]
                 }
             },
