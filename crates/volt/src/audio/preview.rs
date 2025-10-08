@@ -3,6 +3,7 @@ use blerp::{
     streaming::{AudioStream, DeviceManager, SampleBuffer, StreamCommand, StreamingError},
 };
 use crossbeam_channel::{Receiver, Sender, TryRecvError, unbounded};
+use itertools::Itertools;
 use std::{
     fs::File,
     io,
@@ -24,7 +25,9 @@ pub enum PreviewError {
     #[error("no output audio device available")]
     NoOutputDevice,
     #[error("file system io error: {0}")]
-    FileSystemIo(io::Error),
+    FileSystemIo(#[from] io::Error),
+    #[error("error from Symphonia: {0}")]
+    Symphonia(#[from] symphonia::core::errors::Error),
     #[error("audio system not initialized")]
     NotInitialized,
 }
@@ -131,18 +134,24 @@ fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option
     };
 
     let buffer = Arc::new(SampleBuffer::new(44100 * 60, const { NonZeroUsize::new(2).unwrap() }));
-    let (mut audio_stream, command_tx) = AudioStream::new(device.clone(), buffer, 44100, 512)?;
+    let (mut audio_stream, command_tx) = AudioStream::new(device.clone(), Arc::clone(&buffer), 44100, 512)?;
+    let mut current_reader: Option<Reader> = None;
 
     let mut current_data = None;
     while is_running.load(Ordering::SeqCst) {
+        if let Some(ref mut reader) = current_reader {
+            buffer.write_frames(&reader.packet()?.collect_vec());
+        }
         match command_rx.try_recv() {
-            Ok(PreviewCommand::PlayFile(path)) => match Reader::new(File::open(&path).map_err(PreviewError::FileSystemIo)?) {
+            Ok(PreviewCommand::PlayFile(path)) => match Reader::new(File::open(&path)?) {
                 Ok(reader) => {
                     current_data = Some(PreviewData {
                         duration: reader.duration(),
                         started_playing: Instant::now(),
                         path: Some(Arc::new(path)),
                     });
+                    current_reader = Some(reader);
+
                     let _ = command_tx.send(StreamCommand::Start);
                     let _ = data_tx.send(current_data.clone());
                 }

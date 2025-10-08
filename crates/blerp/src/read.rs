@@ -1,9 +1,15 @@
-use std::{cell::RefCell, num::NonZeroUsize, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    iter::{IntoIterator, Iterator, from_fn},
+    num::NonZeroUsize,
+    rc::Rc,
+    time::Duration,
+};
 
 use itertools::Itertools;
 use symphonia::{
     core::{
-        audio::Channels,
+        audio::{AudioBuffer, Channels, SampleBuffer},
         codecs::{CodecParameters, Decoder, DecoderOptions},
         errors::Result as SymphoniaResult,
         formats::{FormatOptions, FormatReader},
@@ -58,6 +64,33 @@ impl Reader {
             decoder,
             format_reader: Rc::clone(&format_reader),
         })
+    }
+
+    /// Yield one packet from this reader as channel-interleaved samples.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a packet could not be retrieved ([`FormatReader::next_packet`] failed)
+    /// or a packet could not be decoded ([`Decoder::decode`] failed).
+    // TODO make this handle tracks with different start points
+    pub fn packet(&mut self) -> SymphoniaResult<impl Iterator<Item = f32>> {
+        let packet = self.format_reader.next_packet()?;
+        let mut output = Vec::new();
+        for decoder in &mut self.track_decoders {
+            let source = decoder.decode(&packet)?;
+            let mut destination = AudioBuffer::new(source.capacity() as u64, *source.spec());
+            source.convert(&mut destination);
+            output.resize_with(output.len().max(destination.spec().channels.count()), Vec::new);
+            for (output_channel, packet_channel) in output.iter_mut().zip(destination.planes().planes().iter()) {
+                output_channel.resize(packet_channel.len(), 0.);
+                for (output_sample, packet_sample) in output_channel.iter_mut().zip(packet_channel.iter()) {
+                    *output_sample += packet_sample;
+                }
+            }
+        }
+
+        let mut channels = output.into_iter().map(IntoIterator::into_iter).collect_vec();
+        from_fn(move || channels.iter_mut().map(Iterator::next).collect::<Option<Vec<_>>>()).flatten().pipe(Ok)
     }
 }
 

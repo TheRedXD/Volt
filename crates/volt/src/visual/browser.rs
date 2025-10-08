@@ -30,10 +30,7 @@ use unicode_truncate::UnicodeTruncateStr;
 
 use crossbeam_channel::{Receiver, TryRecvError, bounded, unbounded};
 
-use crate::{
-    audio::preview::Preview,
-    visual::theme::ThemeColors,
-};
+use crate::{audio::preview::Preview, visual::theme::ThemeColors};
 
 // https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#bit-twiddling
 macro_rules! count_tts {
@@ -422,19 +419,16 @@ impl Browser {
             .inner;
         if response.clicked() {
             match kind {
-                EntryKind::Audio => match self.preview.data() {
-                    Some(_) => {
+                EntryKind::Audio => {
+                    if self.preview.data().is_some() {
                         if let Err(e) = self.preview.stop() {
                             error!("Failed to stop audio preview: {}", e);
                         }
+                    } else if let Err(error) = self.preview.play_file(path.to_path_buf()) {
+                        error!("Failed to play audio file: {}", error);
+                        self.preview.clear_data();
                     }
-                    None => {
-                        if let Err(e) = self.preview.play_file(path.to_path_buf()) {
-                            error!("Failed to play audio file: {}", e);
-                            self.preview.clear_data();
-                        }
-                    }
-                },
+                }
                 EntryKind::File => {
                     that_detached(path.as_os_str()).unwrap();
                 }
