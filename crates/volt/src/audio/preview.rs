@@ -2,7 +2,7 @@ use blerp::{
     read::Reader,
     streaming::{AudioStream, DeviceManager, SampleBuffer, StreamCommand, StreamingError},
 };
-use cpal::StreamConfig;
+use cpal::{traits::DeviceTrait, StreamConfig, SupportedBufferSize};
 use crossbeam_channel::{Receiver, Sender, TryRecvError, unbounded};
 use itertools::Itertools;
 use std::{
@@ -136,8 +136,25 @@ fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option
         return Err(PreviewError::NoOutputDevice);
     };
 
-    let buffer = Arc::new(SampleBuffer::new(44100 * 60, const { NonZeroUsize::new(2).unwrap() }));
-    let (mut audio_stream, command_tx) = AudioStream::new(device.clone(), Arc::clone(&buffer), 44100, 512)?;
+    let supported_sample_rates = device.cpal_device.default_output_config().unwrap().buffer_size().clone();
+    let supported_sample_rates_range = match supported_sample_rates {
+        SupportedBufferSize::Range { min, max } => (min, max),
+        SupportedBufferSize::Unknown => (44100, 44100), // Assume the sample rate is supported and we just don't have the information proving that
+    };
+    let preferred_sample_rate = 44100;
+    let sample_rate = if supported_sample_rates_range.0 <= preferred_sample_rate && preferred_sample_rate <= supported_sample_rates_range.1 {
+        preferred_sample_rate
+    } else {
+        if preferred_sample_rate < supported_sample_rates_range.0 {
+            supported_sample_rates_range.0
+        } else {
+            supported_sample_rates_range.1
+        }
+    } as u32;
+    let channels = device.cpal_device.default_output_config().unwrap().channels();
+
+    let buffer = Arc::new(SampleBuffer::new((sample_rate as usize) * 60, NonZeroUsize::new(channels as usize).unwrap()));
+    let (mut audio_stream, command_tx) = AudioStream::new(device.clone(), Arc::clone(&buffer), sample_rate, 512)?;
     let mut current_reader: Option<Reader> = None;
 
     let mut current_data = None;
