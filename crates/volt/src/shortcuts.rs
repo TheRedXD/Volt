@@ -1,0 +1,1 @@
+// TODO: build a shortcuts system

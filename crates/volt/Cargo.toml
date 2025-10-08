@@ -9,21 +9,34 @@ cpal = { workspace = true }
 itertools = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-eframe = { version = "0.32.0", features = ["wgpu"] }
-egui = { version = "0.32.0", features = ["color-hex"] }
-egui_extras = { version = "0.32.0", features = ["all_loaders"] }
+eframe = { version = "0.32.3", features = ["wgpu"] }
+egui = { version = "0.32.3", features = ["color-hex"] }
+egui_extras = { version = "0.32.3", features = ["all_loaders"] }
 egui_plot = "0.33.0"
 image = { version = "0.25.5", features = ["jpeg", "png"] }
 open = "5.3.2"
-rodio = { version = "0.21.1", features = ["minimp3"] }
 rustfft = "6.2.0"
 serde = "1.0.217"
 strum = { version = "0.27.2", features = ["derive"] }
 tap = "1.0.1"
 blerp = { path = "../blerp" }
 human-panic = "2.0.2"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 notify = { version = "8.0.0", features = ["crossbeam-channel"] }
 crossbeam-channel = "0.5.14"
 pastey = "0.1.1"
 unicode-truncate = "2.0.0"
+symphonia = { version = "0.5.4", features = ["all"] }
+strsim = "0.11.1"
+unhygienic2 = "0.1.0"
+
+# TEMPORARY FIX: Fix some platform support
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu = "25"
+
+[build-dependencies]
+egui = { version = "0.32.3", features = ["color-hex"] }
+proc-macro2 = "1.0.101"
+quote = "1.0.41"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.145"

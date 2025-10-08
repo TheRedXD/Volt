@@ -4,32 +4,33 @@ use super::{
     error::{StreamingError, StreamingResult},
 };
 use cpal::{
-    traits::{DeviceTrait, StreamTrait},
     BufferSize, SampleFormat, SampleRate, Stream, StreamConfig, StreamError,
+    traits::{DeviceTrait, StreamTrait},
 };
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
 use parking_lot::Mutex;
 use std::{
     cmp,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::Instant,
 };
 use tracing::{debug, error, info, warn};
 
-/// Commands for controlling the audio stream
+/// Commands for controlling an audio stream.
 #[derive(Debug, Clone)]
 pub enum StreamCommand {
-    /// Start the audio stream
+    /// Start the audio stream.
     Start,
-    /// Stop the audio stream
+    /// Stop the audio stream.
     Stop,
-    /// Set master volume (0.0 to 1.0)
+    /// Set master volume (0.0 to 1.0).
     SetVolume(f32),
-    /// Update stream configuration
+    /// Update stream configuration.
     UpdateConfig(StreamConfig),
-    /// Shutdown the stream completely
+    /// Shutdown the stream completely.
     Shutdown,
 }
 
@@ -43,7 +44,7 @@ pub enum StreamState {
     Error,
 }
 
-/// Audio stream statistics for monitoring
+/// Audio stream statistics for monitoring.
 #[derive(Debug, Default)]
 pub struct StreamStats {
     pub frames_processed: AtomicU64,
@@ -85,11 +86,11 @@ pub struct AudioStream {
 }
 
 impl AudioStream {
-    /// Create a new audio stream
+    /// Create a new audio stream.
     ///
     /// # Errors
     /// Returns an error if the device doesn't support the requested configuration
-    /// or if there's an issue setting up the audio stream.
+    /// or if there was an issue setting up the audio stream.
     pub fn new(device: Device, buffer: Arc<SampleBuffer>, sample_rate: u32, buffer_size: usize) -> StreamingResult<(Self, Sender<StreamCommand>)> {
         let (command_tx, command_rx) = crossbeam_channel::unbounded();
 
@@ -97,7 +98,7 @@ impl AudioStream {
         let config = Self::get_optimal_config(&device, sample_rate, buffer.channels())?;
 
         info!(
-            "Creating audio stream: device='{}', sample_rate={}, channels={}, buffer_size={}",
+            "Creating audio stream: device='{:?}', sample_rate={}, channels={}, buffer_size={}",
             device.name, config.sample_rate.0, config.channels, buffer_size
         );
 
@@ -119,7 +120,7 @@ impl AudioStream {
         Ok((stream, command_tx))
     }
 
-    /// Start the audio stream
+    /// Start the audio stream.
     ///
     /// # Errors
     /// Returns an error if the audio stream cannot be created or started.
@@ -150,7 +151,7 @@ impl AudioStream {
         Ok(())
     }
 
-    /// Stop the audio stream
+    /// Stop the audio stream.
     ///
     /// # Errors
     /// Returns an error if there's an issue stopping the audio stream,
@@ -180,7 +181,7 @@ impl AudioStream {
         Ok(())
     }
 
-    /// Process stream commands (call this regularly from a control thread)
+    /// Process stream commands (call this regularly from a control thread).
     ///
     /// # Errors
     /// Returns an error if there's an issue processing a command (e.g., starting or stopping the stream).
@@ -217,26 +218,26 @@ impl AudioStream {
         }
     }
 
-    /// Set master volume (0.0 to 1.0)
+    /// Set master volume (0.0 to 1.0).
     pub fn set_volume(&self, volume: f32) {
         let clamped_volume = volume.clamp(0.0, 1.0);
         *self.volume.lock() = clamped_volume;
         debug!("Volume set to {:.2}", clamped_volume);
     }
 
-    /// Get current volume
+    /// Get current volume.
     #[must_use]
     pub fn get_volume(&self) -> f32 {
         *self.volume.lock()
     }
 
-    /// Update stream configuration (requires restart)
+    /// Update stream configuration (requires restart).
     ///
     /// # Errors
     /// Returns an error if the new configuration is not supported by the device
     /// or if there's an issue restarting the stream with the new configuration.
     pub fn update_config(&mut self, config: StreamConfig) -> StreamingResult<()> {
-        let was_running = self.is_running.load(Ordering::SeqCst);
+        let was_running = self.is_running();
 
         if was_running {
             self.stop()?;
@@ -253,19 +254,19 @@ impl AudioStream {
         Ok(())
     }
 
-    /// Get current stream state
+    /// Get current stream state.
     #[must_use]
     pub fn get_state(&self) -> StreamState {
         *self.state.lock()
     }
 
-    /// Check if stream is running
+    /// Check if stream is running.
     #[must_use]
     pub fn is_running(&self) -> bool {
         self.is_running.load(Ordering::SeqCst)
     }
 
-    /// Get stream statistics
+    /// Get stream statistics as `(frames processed, underruns, overruns, last callback duration in µs)`.
     #[must_use]
     pub fn get_stats(&self) -> (u64, u64, u64, u64) {
         (
@@ -276,13 +277,13 @@ impl AudioStream {
         )
     }
 
-    /// Get optimal configuration for the device
+    /// Get optimal configuration for the device.
     fn get_optimal_config(device: &Device, target_sample_rate: u32, target_channels: usize) -> StreamingResult<StreamConfig> {
         let supported_configs = device.cpal_device.supported_output_configs().map_err(StreamingError::SupportedConfigs)?;
 
-        // Find the best matching configuration
+        // Find the best matching configuration.
         let mut best_config = None;
-        let mut best_score = f32::MIN;
+        let mut best_score = i64::MIN;
 
         for config_range in supported_configs {
             let channels = config_range.channels() as usize;
@@ -304,23 +305,22 @@ impl AudioStream {
             };
 
             // Score configuration (prefer exact matches)
-            let mut score = 0.0f32;
+            let mut score = 0;
 
             // Sample rate score (higher is better)
-            #[allow(clippy::cast_precision_loss, reason = "Rates will be inside of a f32 mantissa")]
-            let rate_diff = (target_sample_rate as f32 - supported_rate as f32).abs();
-            score += 1000.0 - rate_diff;
+            let rate_diff = (i64::from(target_sample_rate) - i64::from(supported_rate)).abs();
+            score += 1000 - rate_diff;
 
             // Channel count score (exact match is best)
             match channels.cmp(&target_channels) {
-                cmp::Ordering::Equal => score += 500.0,
-                cmp::Ordering::Greater => score += 100.0,
+                cmp::Ordering::Equal => score += 500,
+                cmp::Ordering::Greater => score += 100,
                 cmp::Ordering::Less => (),
             }
 
             // Prefer f32 sample format
             if config_range.sample_format() == SampleFormat::F32 {
-                score += 200.0;
+                score += 200;
             }
 
             if score > best_score {
@@ -357,10 +357,10 @@ impl AudioStream {
 
         // Audio callback closure
         let callback = move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
-            let start_time = std::time::Instant::now();
+            let start = Instant::now();
 
+            // Fill with silence if not running
             if !is_running.load(Ordering::SeqCst) {
-                // Fill with silence if not running
                 data.fill(0.0);
                 return;
             }
@@ -392,7 +392,7 @@ impl AudioStream {
 
             // Update statistics
             stats.frames_processed.fetch_add(frames_read as u64, Ordering::Relaxed);
-            let duration_us = start_time.elapsed().as_micros();
+            let duration_us = start.elapsed().as_micros();
             #[allow(clippy::cast_possible_truncation, reason = "Callback duration never will be over the size of an u64")]
             stats.last_callback_duration_us.store(duration_us as u64, Ordering::Relaxed);
         };

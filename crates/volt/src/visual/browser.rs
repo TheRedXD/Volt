@@ -1,16 +1,12 @@
-use crate::{
-    audio::preview::{self, Preview, PreviewData, PreviewError},
-    visual::ThemeColors,
-};
 use blerp::utils::zip;
-use crossbeam_channel::{bounded, unbounded, Receiver, TryRecvError};
 use egui::{
+    Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke, Ui, UiBuilder, Vec2,
+    Widget,
     emath::{self, TSTransform},
-    include_image, vec2, Button, Color32, Context, CursorIcon, DragAndDrop, DroppedFile, FontId, Id, Image, LayerId, Margin, Order, Response, RichText, ScrollArea, Sense, Separator, Shape, Stroke,
-    Ui, UiBuilder, Vec2, Widget,
+    hex_color, include_image, vec2,
 };
 use itertools::Itertools;
-use notify::{recommended_watcher, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher, recommended_watcher};
 use open::that_detached;
 use std::{
     borrow::Cow,
@@ -26,17 +22,19 @@ use std::{
     sync::{Arc, RwLock},
     task::Poll,
     thread::spawn,
+    vec,
 };
 use strum::Display;
 use tap::Pipe;
-use thiserror::Error;
 use tracing::{error, trace};
 use unicode_truncate::UnicodeTruncateStr;
 
-#[derive(Debug, Error, Display)]
-pub enum BrowserError {
-    PreviewError(#[from] PreviewError),
-}
+use crossbeam_channel::{Receiver, TryRecvError, bounded, unbounded};
+
+use crate::{
+    audio::preview::Preview,
+    visual::theme::ThemeColors,
+};
 
 // https://veykril.github.io/tlborm/decl-macros/building-blocks/counting.html#bit-twiddling
 macro_rules! count_tts {
@@ -127,16 +125,29 @@ impl<T> Default for FsWatcherCache<T> {
 impl Browser {
     const ENTRY_HEIGHT: f32 = 20.;
 
-    pub fn new(theme: Rc<ThemeColors>) -> Result<Self, BrowserError> {
-        Ok(Self {
+    // TODO move some of this to blerp
+    #[allow(clippy::too_many_lines)]
+    pub fn new(theme: Rc<ThemeColors>) -> Self {
+        Self {
             selected_category: Category::Files,
-            open_paths: vec![PathBuf::from_str("/").unwrap()],
+            open_paths: {
+                #[cfg(target_os = "windows")]
+                {
+                    (b'A'..=b'Z')
+                        .filter_map(|letter| format!(r"{}:\", letter as char).pipe(PathBuf::from).pipe(Some).filter(|drive| matches!(exists(drive), Ok(true))))
+                        .collect()
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    vec![PathBuf::from_str("/").unwrap()]
+                }
+            },
             expanded_paths: Vec::new(),
-            preview: Preview::new()?,
+            preview: Preview::new(),
             theme,
             cached_entries: FsWatcherCache::default(),
             cached_entry_kinds: Arc::new(RwLock::new(FsWatcherCache::default())),
-        })
+        }
     }
 
     fn entry_kind_of(path: impl AsRef<Path>, cached_entry_kinds: &mut FsWatcherCache<EntryKind>) -> EntryKind {
@@ -388,37 +399,41 @@ impl Browser {
             }))
         };
         let response = ui
-            .allocate_ui(vec2(f32::INFINITY, Self::ENTRY_HEIGHT), |ui| {
+            .allocate_ui(vec2(ui.available_width(), Self::ENTRY_HEIGHT), |ui| {
                 ui.horizontal(|ui| {
                     #[allow(clippy::cast_possible_truncation, reason = "this is a visual effect")]
                     #[allow(clippy::cast_precision_loss, reason = "this is a visual effect")]
                     ui.add_space(INDENT_SIZE * depth as f32);
-                    match kind {
-                        EntryKind::Audio => self.add_audio_entry(&path, ui, &Rc::clone(&self.theme), button),
-                        EntryKind::File => Self::add_file(ui, button(&self.theme)),
-                        EntryKind::Directory => {
-                            ui.horizontal(|ui| ui.add(self.collapsing_header_icon(f32::from(self.expanded_paths.contains(&path)))) | ui.add(button(&self.theme)))
-                                .inner
-                        }
-                    }
+                    egui::Frame::new()
+                        .show(ui, |ui| match kind {
+                            EntryKind::Audio => self.add_audio_entry(&path, ui, &Rc::clone(&self.theme), button),
+                            EntryKind::File => Self::add_file(ui, button(&self.theme)),
+                            EntryKind::Directory => {
+                                ui.horizontal(|ui| ui.add(self.collapsing_header_icon(f32::from(self.expanded_paths.contains(&path)))) | ui.add(button(&self.theme)))
+                                    .inner
+                            }
+                        })
+                        .inner
+                        | ui.allocate_response(ui.available_size(), Sense::click())
                 })
+                .inner
             })
-            .inner
             .inner;
         if response.clicked() {
             match kind {
-                EntryKind::Audio => {
-                    if let Some(_) = self.preview.data() {
+                EntryKind::Audio => match self.preview.data() {
+                    Some(_) => {
                         if let Err(e) = self.preview.stop() {
                             error!("Failed to stop audio preview: {}", e);
                         }
-                    } else {
+                    }
+                    None => {
                         if let Err(e) = self.preview.play_file(path.to_path_buf()) {
                             error!("Failed to play audio file: {}", e);
                             self.preview.clear_data();
                         }
                     }
-                }
+                },
                 EntryKind::File => {
                     that_detached(path.as_os_str()).unwrap();
                 }
@@ -431,6 +446,10 @@ impl Browser {
                 }
             }
         }
+        if response.hovered() {
+            ui.painter().rect_filled(response.rect, 2.0, self.theme.browser_unselected_hover_button_fg.linear_multiply(0.2));
+            ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
+        }
         response
     }
 
@@ -439,28 +458,20 @@ impl Browser {
             ui.horizontal(|ui| {
                 ui.add(Image::new(include_image!("../images/icons/audio.png"))).union(ui.add(button(theme))).pipe(|response| {
                     ui.ctx().request_repaint();
-
-                    let Some(current_data) = self.preview.data() else {
-                        return response;
-                    };
-                    let Some(length) = current_data.length else {
-                        return response;
-                    };
-
-                    let is_being_previewed = current_data.path.as_ref().map(|current_path| **current_path == path).unwrap_or(false);
-
-                    if is_being_previewed {
-                        return response
+                    if let Some(current_data) = self.preview.data()
+                        && current_data.path.as_ref().is_some_and(|current_path| **current_path == path)
+                    {
+                        response
                             | ui.label(format!(
                                 "{:>02}:{:>02} of {:>02}:{:>02}",
                                 current_data.progress().as_secs() / 60,
                                 current_data.progress().as_secs() % 60,
-                                length.as_secs() / 60,
-                                length.as_secs() % 60
-                            ));
+                                current_data.duration.as_secs() / 60,
+                                current_data.duration.as_secs() % 60
+                            ))
+                    } else {
+                        response
                     }
-
-                    response
                 })
             })
         };
@@ -478,6 +489,16 @@ impl Browser {
             let dnd_response = ui.interact(response.rect, Id::new(path.to_owned()), Sense::click_and_drag()).on_hover_cursor(CursorIcon::Grab);
             dnd_response | response
         };
+        if let Some(data) = self.preview.data()
+            && data.path.as_ref().is_some_and(|previewing| **previewing == *path)
+        {
+            ui.ctx().request_repaint();
+            ui.painter().rect_filled(
+                response.rect.with_max_x(response.rect.width().mul_add(data.percentage(), response.rect.left())),
+                0,
+                hex_color!("#ffffff20"),
+            );
+        }
         response.layer_id = ui.layer_id();
         response
     }
@@ -501,7 +522,6 @@ impl Widget for &mut Browser {
         let browser_width = ui.available_width();
         ui.vertical(|ui| {
             ui.visuals_mut().button_frame = false;
-            ui.visuals_mut().interact_cursor = Some(CursorIcon::PointingHand);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 16.;
                 ui.columns_const(|uis| {

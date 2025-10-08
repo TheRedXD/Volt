@@ -1,18 +1,25 @@
 use crate::streaming::error::StreamingResult;
-use cpal::{
-    traits::{DeviceTrait, HostTrait},
-    Device as CpalDevice,
-};
+use cpal::traits::{DeviceTrait, HostTrait};
+use tracing::error;
 
 pub struct DeviceManager {
     devices: Vec<Device>,
-    default_output: Option<usize>, // Position of the default output device in the devices vector
+    default_output: Option<Device>,
 }
 
 #[derive(Clone)]
 pub struct Device {
-    pub name: String,
-    pub cpal_device: CpalDevice,
+    pub name: Option<String>,
+    pub cpal_device: cpal::Device,
+}
+
+impl From<cpal::Device> for Device {
+    fn from(device: cpal::Device) -> Self {
+        Self {
+            name: device.name().inspect_err(|err| error!("failed to get device name: {err}")).ok(),
+            cpal_device: device,
+        }
+    }
 }
 
 impl DeviceManager {
@@ -23,18 +30,8 @@ impl DeviceManager {
     /// there's an issue accessing the default audio host.
     pub fn new() -> StreamingResult<Self> {
         let host = cpal::default_host();
-        let devices: Vec<Device> = host
-            .output_devices()?
-            .filter_map(|d| {
-                let name = d.name().ok()?;
-                Some(Device { name, cpal_device: d })
-            })
-            .collect();
-        let default_output = host
-            .default_output_device()
-            .and_then(|d| d.name().ok())
-            .and_then(|name| devices.iter().position(|device| device.name == name));
-
+        let devices = host.output_devices()?.map(Into::into).collect();
+        let default_output = host.default_output_device().map(Into::into);
         Ok(Self { devices, default_output })
     }
 
@@ -46,10 +43,8 @@ impl DeviceManager {
 
     /// Returns the default audio output device, if available.
     #[must_use]
-    pub fn get_default_device(&self) -> Option<&Device> {
-        let i = self.default_output?;
-
-        self.devices.get(i)
+    pub const fn get_default_device(&self) -> Option<&Device> {
+        self.default_output.as_ref()
     }
 
     /// Refreshes the list of available audio devices.
@@ -58,7 +53,6 @@ impl DeviceManager {
     /// Returns an error if the system cannot re-enumerate audio devices.
     pub fn refresh_devices(&mut self) -> StreamingResult<()> {
         *self = Self::new()?;
-
         Ok(())
     }
 }

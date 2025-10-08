@@ -4,34 +4,34 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum StreamingError {
-    #[error("Audio device error: {0}")]
+    #[error("audio device error: {0}")]
     Device(#[from] DevicesError),
 
-    #[error("Audio stream error: {0}")]
+    #[error("audio stream error: {0}")]
     Stream(#[from] StreamError),
 
-    #[error("Failed to build audio stream: {0}")]
+    #[error("failed to build audio stream: {0}")]
     BuildStream(#[from] BuildStreamError),
 
-    #[error("Failed to play audio stream: {0}")]
+    #[error("failed to play audio stream: {0}")]
     PlayStream(#[from] PlayStreamError),
 
-    #[error("Failed to get supported stream configs: {0}")]
+    #[error("failed to get supported stream configs: {0}")]
     SupportedConfigs(#[from] SupportedStreamConfigsError),
 
-    #[error("Unsupported audio format")]
+    #[error("unsupported audio format")]
     UnsupportedFormat,
 
-    #[error("Buffer underrun")]
+    #[error("buffer underrun")]
     BufferUnderrun,
 
-    #[error("Sample rate conversion error: {0}")]
+    #[error("sample rate conversion error: {0}")]
     SampleRateConversion(String),
 
-    #[error("IO error: {0}")]
+    #[error("io error: {0}")]
     Io(#[from] io::Error),
 
-    #[error("Audio processing error: {0}")]
+    #[error("audio processing error: {0}")]
     Processing(String),
 }
 

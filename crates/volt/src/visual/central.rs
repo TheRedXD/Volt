@@ -1,5 +1,6 @@
 use std::ops::BitOr;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::{collections::HashMap, num::NonZeroU64};
 
 use blerp::processing::effects::clip::ClipEffect;
@@ -7,13 +8,12 @@ use blerp::processing::effects::scale::ScaleEffect;
 use eframe::egui;
 use egui::scroll_area::ScrollSource;
 use egui::{
-    hex_color, pos2, scroll_area::ScrollBarVisibility, vec2, Align, Align2, Color32, CursorIcon, Frame, Id, InputState, Layout, Rect, Response, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2, Widget,
+    Align, Align2, Color32, CursorIcon, Frame, Id, InputState, Layout, Rect, Response, ScrollArea, Sense, Stroke, Ui, UiBuilder, Vec2, Widget, hex_color, pos2, scroll_area::ScrollBarVisibility, vec2,
 };
 use graph::{Graph, Node, NodeData, NodeId};
 use itertools::Itertools;
 use playlist::{Clip, ClipData, Playlist, Time};
-
-use super::ThemeColors;
+use tap::Pipe;
 
 mod graph {
     use blerp::processing::effects::Effect;
@@ -47,11 +47,9 @@ mod graph {
 }
 
 mod playlist {
-    use cpal::Sample;
-    use egui::{vec2, Vec2};
-    use itertools::Itertools;
-    use rodio::{Decoder, Source};
-    use std::{fs::File, io::BufReader, path::PathBuf, time::Duration};
+    use blerp::read::{Reader, TrackReader};
+    use egui::{Vec2, vec2};
+    use std::{fs::File, path::Path, rc::Rc, sync::Arc, time::Duration};
 
     #[derive(Debug)]
     pub struct Playlist {
@@ -124,21 +122,30 @@ mod playlist {
     pub struct Clip {
         pub start: Time,
         pub track: u32,
-        pub data: ClipData,
+        pub data: Rc<ClipData>,
     }
 
-    #[derive(Debug, Clone)]
     pub enum ClipData {
-        Audio { path: PathBuf, samples: Vec<f64>, length: Duration },
+        Audio { path: Arc<Path>, reader: TrackReader, duration: Duration },
         Midi { length: Time },
     }
 
+    impl std::fmt::Debug for ClipData {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Audio { path, reader: _, duration } => f.debug_struct("Audio").field("path", path).field("reader", &"Reader { .. }").field("duration", duration).finish(),
+                Self::Midi { length } => f.debug_struct("Midi").field("length", length).finish(),
+            }
+        }
+    }
+
     impl ClipData {
-        pub fn from_path(path: PathBuf) -> Self {
-            let decoder = Decoder::new(BufReader::new(File::open(&path).unwrap())).unwrap();
-            let length = decoder.total_duration().unwrap();
-            let samples = decoder.map(f64::from_sample).collect_vec();
-            Self::Audio { path, samples, length }
+        pub fn from_path(path: Arc<Path>) -> impl Iterator<Item = Self> {
+            Reader::new(File::open(&path).unwrap()).unwrap().decompose().map(move |reader| Self::Audio {
+                path: Arc::clone(&path),
+                duration: reader.duration(),
+                reader,
+            })
         }
     }
 
@@ -188,14 +195,15 @@ mod playlist {
 
         pub fn duration_of_clip(&self, clip: &ClipData) -> Duration {
             match clip {
-                ClipData::Audio { length, .. } => *length,
+                ClipData::Audio { duration: length, .. } => *length,
                 ClipData::Midi { length } => self.beats_to_duration(length.beats()),
             }
         }
     }
 }
 
-enum Mode {
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum Mode {
     Playlist,
     Graph,
 }
@@ -207,7 +215,7 @@ impl Default for Mode {
 }
 
 pub struct Central {
-    mode: Mode,
+    pub mode: Mode,
     playlist: Playlist,
     graph: Graph,
 }
@@ -283,7 +291,7 @@ impl Central {
                             .rev()
                             .map(|y| {
                                 Frame::default()
-                                    .fill(ThemeColors::default().central_background)
+                                    .fill(hex_color!("1f212d"))
                                     .show(ui, |ui| {
                                         let (response, painter) = ui.allocate_painter(vec2(f32::INFINITY, playlist.zoom.y), Sense::hover());
                                         if let Some(path) = response.dnd_release_payload::<PathBuf>()
@@ -292,11 +300,9 @@ impl Central {
                                                     * f64::from(playlist.time_signature.beats_per_measure),
                                             )
                                         {
-                                            playlist.clips.push(Clip {
-                                                start,
-                                                track: y,
-                                                data: ClipData::from_path((*path).clone()),
-                                            });
+                                            playlist
+                                                .clips
+                                                .extend(ClipData::from_path((*path).clone().into()).map(|data| Clip { start, track: y, data: Rc::new(data) }));
                                         }
                                         #[allow(clippy::cast_precision_loss, reason = "rounding errors are negligible because this is a visual effect")]
                                         #[allow(clippy::cast_possible_truncation, reason = "truncation only occurs at unreasonably high numbers")]
@@ -313,8 +319,10 @@ impl Central {
                                                 rect.left_top(),
                                                 Align2::LEFT_TOP,
                                                 Color32::BLUE,
-                                                match data {
-                                                    ClipData::Audio { path, .. } => path.file_name().unwrap().to_string_lossy(),
+                                                match &**data {
+                                                    ClipData::Audio { path, reader, duration: length } => {
+                                                        format!("{} ({} ch, {:?})", path.file_name().unwrap().display(), reader.channels(), length)
+                                                    }
                                                     ClipData::Midi { .. } => "<midi data>".into(),
                                                 },
                                             );
@@ -420,7 +428,7 @@ impl Central {
                         .tuple_windows()
                     {
                         #[allow(clippy::tuple_array_conversions, reason = "this looks fine")]
-                        painter.line_segment([a, b], Stroke::new(2., hex_color!("#80808080")));
+                        painter.line_segment([a, b], Stroke::new(2., hex_color!("#808080ff")));
                     }
                 }
             })
@@ -430,11 +438,26 @@ impl Central {
 
 impl Widget for &mut Central {
     fn ui(self, ui: &mut Ui) -> Response {
-        Frame::default()
+        let response = Frame::default()
             .show(ui, |ui| match &mut self.mode {
                 Mode::Playlist => Central::add_playlist(ui, &mut self.playlist),
                 Mode::Graph => Central::add_graph(ui, &mut self.graph),
             })
-            .response
+            .response;
+        if let Some(path) = response.dnd_release_payload::<PathBuf>()
+            && let Some(start) = Time::from_beats(
+                f64::from((ui.input(|input| input.pointer.latest_pos().unwrap().x) - response.rect.min.x) / self.playlist.zoom.x) * f64::from(self.playlist.time_signature.beats_per_measure),
+            )
+        {
+            let last_track = self.playlist.clips.iter().map(|clip| clip.track).max().unwrap_or(0);
+            self.playlist
+                .clips
+                .extend(ClipData::from_path((*path).clone().into()).pipe(|data| (0..).zip(data)).map(|(index, data)| Clip {
+                    start,
+                    track: last_track + index,
+                    data: Rc::new(data),
+                }));
+        }
+        response
     }
 }

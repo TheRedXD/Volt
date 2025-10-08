@@ -1,44 +1,34 @@
-use crate::utils::Channel;
 use parking_lot::Mutex;
 use ringbuf::{
-    traits::{Consumer, Observer, Producer, Split},
     HeapCons, HeapProd, HeapRb,
+    traits::{Consumer, Observer, Producer, Split},
 };
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 pub struct AudioBuffer<T> {
     producer: Arc<Mutex<HeapProd<T>>>,
     consumer: Arc<Mutex<HeapCons<T>>>,
     capacity: usize,
-    channel: Channel,
+    channels: NonZeroUsize,
 }
 
 impl<T: Copy + Default> AudioBuffer<T> {
-    /// Create a new audio buffer
-    /// - capacity: Total number of samples (must be divisible by channels for frame alignment)
-    /// - channel: Channel kind for this buffer (Mono, Stereo, Multitrack)
-    ///
-    /// # Panics
-    /// Panics if the channel count is 0 or if capacity is not divisible by channel count.
+    /// Create a new audio buffer.
+    /// - `capacity`: Number of samples per channel
+    /// - `channel`: Number of channels for this buffer; for example, 1 for mono, 2 for stereo
     #[must_use]
-    pub fn new(capacity: usize, channel: Channel) -> Self {
-        assert!(usize::from(channel) > 0, "Must have at least 1 channel");
-        assert_eq!(capacity % usize::from(channel), 0, "Capacity must be divisible by channel count for frame alignment");
-
-        let buffer = HeapRb::new(capacity);
-        let (producer, consumer) = buffer.split();
-
+    pub fn new(capacity: usize, channels: NonZeroUsize) -> Self {
+        let (producer, consumer) = HeapRb::new(capacity * channels.get()).split();
         Self {
             producer: Arc::new(Mutex::new(producer)),
             consumer: Arc::new(Mutex::new(consumer)),
             capacity,
-            channel,
+            channels,
         }
     }
 
-    /// Write audio data to the buffer
-    /// Returns the number of complete frames written
-    /// Ensures only complete frames are written to prevent audio artifacts
+    /// Write audio data to the buffer and return the number of complete frames written.
+    /// Ensures only complete frames are written to prevent audio artifacts.
     pub fn write_frames(&self, data: &[T]) -> usize {
         if data.is_empty() {
             return 0;
@@ -132,13 +122,20 @@ impl<T: Copy + Default> AudioBuffer<T> {
     }
 
     #[must_use]
+    /// Total number of samples; capacity per channel multiplied by number of channels
     pub const fn capacity(&self) -> usize {
+        self.channel_capacity() * self.channels()
+    }
+
+    #[must_use]
+    /// Number of samples per channel
+    pub const fn channel_capacity(&self) -> usize {
         self.capacity
     }
 
     #[must_use]
-    pub fn channels(&self) -> usize {
-        self.channel.into()
+    pub const fn channels(&self) -> usize {
+        self.channels.get()
     }
 
     /// Check if buffer has enough space for complete frames
@@ -151,12 +148,6 @@ impl<T: Copy + Default> AudioBuffer<T> {
     #[must_use]
     pub fn can_read_frames(&self, frame_count: usize) -> bool {
         self.len_frames() >= frame_count
-    }
-}
-
-impl<T: Copy + Default> Clone for AudioBuffer<T> {
-    fn clone(&self) -> Self {
-        Self::new(self.capacity, self.channel)
     }
 }
 

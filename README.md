@@ -7,6 +7,10 @@ It will have its own .wav implementation to integrate nicely with the rest of th
 Feel free to make improvements and additions to the DAW, and submit a PR!
 Additionally, you can also open issues with the DAW.
 
+## Our community
+You can join our official Volt Community Discord server at https://discord.gg/PDYpvar9Vu!
+Feel free to discuss anything related to Volt there, as well as music production.
+
 ## Current state
 
 The DAW at the moment is highly unfinished and is currently primarily in the testing phase.

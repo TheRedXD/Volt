@@ -2,10 +2,10 @@
 // pub mod device;  // Commented out - unused legacy device implementation
 pub mod processing;
 pub mod streaming;
-pub mod wavefile;
+pub mod read;
 
 pub mod utils {
-    use std::mem::{transmute_copy, ManuallyDrop, MaybeUninit};
+    use std::mem::{ManuallyDrop, MaybeUninit, transmute_copy};
 
     // https://internals.rust-lang.org/t/should-there-by-an-array-zip-method/21611/5
     pub fn zip<T, U, const N: usize>(ts: [T; N], us: [U; N]) -> [(T, U); N] {
@@ -21,22 +21,5 @@ pub mod utils {
         }
         // SAFETY: zip has been fully initialized
         unsafe { transmute_copy(&zip) }
-    }
-
-    #[derive(Clone, Copy, PartialEq)]
-    pub enum Channel {
-        Mono,
-        Stereo,
-        MultiTrack(usize),
-    }
-
-    impl From<Channel> for usize {
-        fn from(value: Channel) -> Self {
-            match value {
-                Channel::Mono => 1,
-                Channel::Stereo => 2,
-                Channel::MultiTrack(n) => n,
-            }
-        }
     }
 }

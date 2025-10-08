@@ -1,0 +1,36 @@
+{
+    "accent": "#b6afff",
+    "navbar_background_gradient_top": "#1e2132",
+    "navbar_background_gradient_bottom": "#171825",
+    "navbar_outline": "#453f67",
+    "navbar_widget": "#07081520",
+    "notification_background": "#1d1b2b",
+    "notification_border": "#3d3b4b",
+    "central_background": "#171825",
+    "browser": "#171825",
+    "browser_outline": "#28243e",
+    "browser_selected_button_fg": "#ffcf7b",
+    "browser_unselected_button_fg": "#646d88",
+    "browser_unselected_hover_button_fg": "#8591b5",
+    "browser_invalid_name_bg": "#ff000010",
+    "browser_unselected_button_fg_invalid": "#a46d88",
+    "browser_unselected_hover_button_fg_invalid": "#f591b5",
+    "browser_folder_text": "#928ea7",
+    "browser_folder_hover_text": "#ece9ff",
+    "playlist_bar": "#4c495f",
+    "playlist_beat": "#2e2b3f",
+    "bg_text": "#646987",
+    "command_palette": "#1d1b2b",
+    "command_palette_border": "#3d3b4b",
+    "command_palette_text": "#928ea7",
+    "command_palette_placeholder_text": "#928ea740",
+    "shadow": {
+        "offset": [
+            0,
+            0
+        ],
+        "blur": 10,
+        "spread": 5,
+        "color": "#00000020"
+    }
+}

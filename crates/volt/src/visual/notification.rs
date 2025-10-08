@@ -1,6 +1,13 @@
-use std::time::{Duration, Instant};
+use std::{
+    rc::Rc,
+    sync::mpsc::Receiver,
+    time::{Duration, Instant},
+};
 
-use egui::{Color32, hex_color};
+use egui::{Align, CornerRadius, Layout, Stroke, TextWrapMode};
+use tap::Pipe;
+
+use crate::visual::theme::ThemeColors;
 
 #[derive(Debug, Clone)]
 pub struct Notification {
@@ -11,8 +18,11 @@ pub struct Notification {
 
 impl Notification {
     pub fn new(message: String, duration: Option<Duration>) -> Self {
-        let add_time = Instant::now();
-        Self { message, duration, added: add_time }
+        Self {
+            message,
+            duration,
+            added: Instant::now(),
+        }
     }
 
     pub fn with_duration(message: String, duration: Duration) -> Self {
@@ -26,90 +36,59 @@ impl Notification {
 
 pub struct NotificationDrawer {
     notifications: Vec<Notification>,
-}
-
-impl Default for NotificationDrawer {
-    fn default() -> Self {
-        Self::new()
-    }
+    rx: Receiver<Notification>,
+    theme: Rc<ThemeColors>,
 }
 
 impl NotificationDrawer {
-    pub const fn new() -> Self {
-        Self { notifications: Vec::new() }
+    pub const fn new(rx: Receiver<Notification>, theme: Rc<ThemeColors>) -> Self {
+        Self { notifications: Vec::new(), rx, theme }
     }
 
     pub fn add_notification(&mut self, notification: Notification) {
         self.notifications.push(notification);
     }
 
-    pub fn remove_notification(&mut self, index: usize) {
-        if index < self.notifications.len() {
-            self.notifications.remove(index);
-        }
-    }
-
-    pub const fn get_notifications(&self) -> &Vec<Notification> {
+    pub fn get_notifications(&self) -> &[Notification] {
         &self.notifications
     }
 
-    pub fn make(&mut self, message: String, duration: Option<Duration>) {
-        let notification = Notification::new(message, duration);
-        self.add_notification(notification);
+    pub fn notify(&mut self, message: String, duration: Option<Duration>) {
+        self.add_notification(Notification::new(message, duration));
     }
 }
 
 impl egui::Widget for &mut NotificationDrawer {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-        if !self.notifications.is_empty() {
-            let now = Instant::now();
-            let mut indices_to_remove = Vec::new();
-
-            for (i, notification) in self.notifications.iter().enumerate() {
-                let age = notification.added.elapsed();
-                let fade_duration = Duration::from_secs_f32(0.2);
-                let mut opacity = if age <= fade_duration {
-                    age.as_secs_f32() / fade_duration.as_secs_f32()
-                } else if let Some(lifetime) = notification.duration
-                    && lifetime - age <= fade_duration
-                {
-                    (lifetime - age).as_secs_f32() / fade_duration.as_secs_f32()
-                } else {
-                    1.0
+        ui.with_layout(Layout::bottom_up(Align::RIGHT), |ui| {
+            ui.add_space(30.);
+            self.notifications.extend(self.rx.try_iter());
+            self.notifications.retain(|notification| {
+                let Some(opacity) = notification.duration.map_or(Some(1.), |duration| {
+                    (notification.added + duration).checked_duration_since(Instant::now()).as_ref().map(Duration::as_secs_f32)
+                }) else {
+                    return false;
                 };
-
-                if opacity <= 0.0 {
-                    opacity = 0.01;
-                }
-
-                let color = hex_color!("#222222").gamma_multiply(opacity);
-
-                egui::Frame::new().fill(color).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
-                    ui.set_min_width(ui.ctx().screen_rect().width().min(200.));
-                    ui.allocate_ui(ui.available_size(), |ui| {
-                        let text_color = Color32::WHITE.gamma_multiply(opacity);
-                        ui.label(egui::RichText::new(&notification.message).color(text_color));
+                ui.set_opacity(opacity);
+                ui.style_mut().wrap_mode = Some(TextWrapMode::Extend);
+                egui::Frame::new()
+                    .fill(self.theme.notification_background)
+                    .stroke(Stroke::new(1., self.theme.notification_border))
+                    .shadow(self.theme.shadow)
+                    .inner_margin(egui::Margin::same(10))
+                    .outer_margin(egui::Margin::same(10))
+                    .corner_radius(CornerRadius::same(8))
+                    .show(ui, |ui| {
+                        ui.scope(|ui| {
+                            ui.multiply_opacity(0.5);
+                            ui.label(format!("{:?} ago", notification.added.elapsed().as_secs_f32().round().pipe(Duration::from_secs_f32)));
+                        });
+                        ui.label(&notification.message);
                     });
-                });
-
-                // Schedule removal if a duration is specified
-                if let Some(duration) = notification.duration
-                    && notification.added + duration < now
-                {
-                    indices_to_remove.push(i);
-                }
-
-                ui.ctx().request_repaint_after_secs(0.03);
-            }
-
-            // Remove notifications in reverse order to avoid index invalidation
-            for index in indices_to_remove.into_iter().rev() {
-                self.remove_notification(index);
-            }
-
-            ui.allocate_response(ui.available_size(), egui::Sense::hover());
-        }
-
-        ui.allocate_response(egui::Vec2::ZERO, egui::Sense::hover())
+                ui.ctx().request_repaint();
+                true
+            });
+        })
+        .response
     }
 }
