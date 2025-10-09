@@ -48,6 +48,7 @@ pub struct PreviewData {
     pub duration: Duration,
     pub started_playing: Instant,
     pub path: Option<Arc<PathBuf>>,
+    pub waiting_on_load: bool
 }
 
 impl PreviewData {
@@ -61,7 +62,11 @@ impl PreviewData {
 
     /// Return a value between 0 and 1 representing how much of the audio has played.
     pub fn percentage(&self) -> f32 {
-        self.progress().as_secs_f32() / self.duration.as_secs_f32()
+        if self.waiting_on_load {
+            0.
+        } else {
+            self.progress().as_secs_f32() / self.duration.as_secs_f32()
+        }
     }
 }
 
@@ -154,7 +159,7 @@ fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option
     let channels = device.cpal_device.default_output_config().unwrap().channels();
 
     let buffer = Arc::new(SampleBuffer::new((sample_rate as usize) * 60, NonZeroUsize::new(channels as usize).unwrap()));
-    let (mut audio_stream, command_tx) = AudioStream::new(device.clone(), Arc::clone(&buffer), sample_rate, 512)?;
+    let (mut audio_stream, command_tx, stream_command_rx) = AudioStream::new(device.clone(), Arc::clone(&buffer), sample_rate, 512)?;
     let mut current_reader: Option<Reader> = None;
 
     let mut current_data = None;
@@ -169,6 +174,7 @@ fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option
                         duration: reader.duration(),
                         started_playing: Instant::now(),
                         path: Some(Arc::new(path)),
+                        waiting_on_load: false, // false for now, will set to true once I actually implement this
                     });
                     buffer.clear();
                     let _ = command_tx.send(StreamCommand::Start);
@@ -192,7 +198,7 @@ fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option
         }
 
         if let Some(ref data) = current_data
-            && data.started_playing.elapsed() >= data.duration
+            && data.started_playing.elapsed() >= data.duration && !data.waiting_on_load
         {
             let _ = command_tx.send(StreamCommand::Stop);
             let _ = data_tx.send(None);

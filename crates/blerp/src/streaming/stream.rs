@@ -71,6 +71,10 @@ pub struct AudioStream {
     // Control channels
     command_rx: Receiver<StreamCommand>,
     _command_tx: Sender<StreamCommand>, // Keep sender alive
+    
+    // Finish channels
+    _finish_command_rx: Receiver<StreamCommand>, // Keep receiver alive
+    finish_command_tx: Sender<StreamCommand>,
 
     // Stream state
     state: Arc<Mutex<StreamState>>,
@@ -91,8 +95,9 @@ impl AudioStream {
     /// # Errors
     /// Returns an error if the device doesn't support the requested configuration
     /// or if there was an issue setting up the audio stream.
-    pub fn new(device: Device, buffer: Arc<SampleBuffer>, sample_rate: u32, buffer_size: usize) -> StreamingResult<(Self, Sender<StreamCommand>)> {
+    pub fn new(device: Device, buffer: Arc<SampleBuffer>, sample_rate: u32, buffer_size: usize) -> StreamingResult<(Self, Sender<StreamCommand>, Receiver<StreamCommand>)> {
         let (command_tx, command_rx) = crossbeam_channel::unbounded();
+        let (finish_command_tx, finish_command_rx) = crossbeam_channel::unbounded();
 
         // Get optimal configuration for the device
         let config = Self::get_optimal_config(&device, sample_rate, buffer.channels())?;
@@ -109,6 +114,8 @@ impl AudioStream {
             buffer,
             command_rx,
             _command_tx: command_tx.clone(),
+            _finish_command_rx: finish_command_rx.clone(),
+            finish_command_tx: finish_command_tx,
             state: Arc::new(Mutex::new(StreamState::Stopped)),
             is_running: Arc::new(AtomicBool::new(false)),
             volume: Arc::new(Mutex::new(1.0)),
@@ -117,7 +124,7 @@ impl AudioStream {
             channel_count: config.channels as usize,
         };
 
-        Ok((stream, command_tx))
+        Ok((stream, command_tx, finish_command_rx))
     }
 
     /// Start the audio stream.

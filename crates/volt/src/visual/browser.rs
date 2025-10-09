@@ -217,7 +217,7 @@ impl Browser {
 
     pub fn collapsing_header_icon(&self, openness: f32) -> impl Widget + use<'_> {
         move |ui: &mut Ui| {
-            ui.allocate_painter(Vec2::splat(ui.available_height()), Sense::hover()).pipe(|(response, painter)| {
+            ui.allocate_painter(Vec2::splat(ui.available_height()), Sense::click()).pipe(|(response, painter)| {
                 let rect = response.rect.shrink(6.);
                 let mut points = vec![rect.left_top(), rect.right_top(), rect.center_bottom()];
                 let rotation = emath::Rot2::from_angle((openness - 1.) * FRAC_PI_2);
