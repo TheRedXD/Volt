@@ -2,7 +2,7 @@ use blerp::{
     read::Reader,
     streaming::{AudioStream, DeviceManager, SampleBuffer, StreamCommand, StreamingError},
 };
-use cpal::{traits::DeviceTrait, StreamConfig, SupportedBufferSize};
+use cpal::{SupportedBufferSize, traits::DeviceTrait};
 use crossbeam_channel::{Receiver, Sender, TryRecvError, unbounded};
 use itertools::Itertools;
 use std::{
@@ -48,7 +48,7 @@ pub struct PreviewData {
     pub duration: Duration,
     pub started_playing: Instant,
     pub path: Option<Arc<PathBuf>>,
-    pub waiting_on_load: bool
+    pub waiting_on_load: bool,
 }
 
 impl PreviewData {
@@ -62,11 +62,7 @@ impl PreviewData {
 
     /// Return a value between 0 and 1 representing how much of the audio has played.
     pub fn percentage(&self) -> f32 {
-        if self.waiting_on_load {
-            0.
-        } else {
-            self.progress().as_secs_f32() / self.duration.as_secs_f32()
-        }
+        if self.waiting_on_load { 0. } else { self.progress().as_secs_f32() / self.duration.as_secs_f32() }
     }
 }
 
@@ -122,7 +118,7 @@ impl Preview {
         self.data = None;
     }
 
-    pub fn is_playing(&self) -> bool {
+    pub const fn is_playing(&self) -> bool {
         self.data.is_some()
     }
 }
@@ -141,25 +137,17 @@ fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option
         return Err(PreviewError::NoOutputDevice);
     };
 
-    let supported_sample_rates = device.cpal_device.default_output_config().unwrap().buffer_size().clone();
+    let supported_sample_rates = *device.cpal_device.default_output_config().unwrap().buffer_size();
     let supported_sample_rates_range = match supported_sample_rates {
-        SupportedBufferSize::Range { min, max } => (min, max),
-        SupportedBufferSize::Unknown => (44100, 44100), // Assume the sample rate is supported and we just don't have the information proving that
+        SupportedBufferSize::Range { min, max } => min..=max,
+        SupportedBufferSize::Unknown => 44100..=44100, // Assume the sample rate is supported and we just don't have the information proving that
     };
     let preferred_sample_rate = 44100;
-    let sample_rate = if supported_sample_rates_range.0 <= preferred_sample_rate && preferred_sample_rate <= supported_sample_rates_range.1 {
-        preferred_sample_rate
-    } else {
-        if preferred_sample_rate < supported_sample_rates_range.0 {
-            supported_sample_rates_range.0
-        } else {
-            supported_sample_rates_range.1
-        }
-    } as u32;
+    let sample_rate = preferred_sample_rate.clamp(*supported_sample_rates_range.start(), *supported_sample_rates_range.end());
     let channels = device.cpal_device.default_output_config().unwrap().channels();
 
     let buffer = Arc::new(SampleBuffer::new((sample_rate as usize) * 60, NonZeroUsize::new(channels as usize).unwrap()));
-    let (mut audio_stream, command_tx, stream_command_rx) = AudioStream::new(device.clone(), Arc::clone(&buffer), sample_rate, 512)?;
+    let (mut audio_stream, command_tx, _stream_command_rx) = AudioStream::new(device.clone(), Arc::clone(&buffer), sample_rate, 512)?;
     let mut current_reader: Option<Reader> = None;
 
     let mut current_data = None;
@@ -198,7 +186,8 @@ fn preview_worker(command_rx: &Receiver<PreviewCommand>, data_tx: &Sender<Option
         }
 
         if let Some(ref data) = current_data
-            && data.started_playing.elapsed() >= data.duration && !data.waiting_on_load
+            && data.started_playing.elapsed() >= data.duration
+            && !data.waiting_on_load
         {
             let _ = command_tx.send(StreamCommand::Stop);
             let _ = data_tx.send(None);
