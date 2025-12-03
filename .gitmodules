@@ -1,4 +1,0 @@
-[submodule "crates/volt-waveform"]
-	path = crates/volt-waveform
-	url = https://github.com/TheRedXD/volt-waveform-rs
-	update = rebase
