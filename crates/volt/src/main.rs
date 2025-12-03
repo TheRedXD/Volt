@@ -26,6 +26,7 @@ use visual::{
 use crate::visual::{dialog::dialog, theme::ThemeColors};
 use crate::visual::notification::Notification;
 use crate::visual::palette::Palette;
+use volt_waveform;
 
 mod audio;
 mod info;
@@ -111,7 +112,7 @@ impl VoltApp {
         let theme = Rc::new(ThemeColors::default());
         Popup::open_id(&cc.egui_ctx, "welcome".into());
         let (tx, rx) = channel();
-
+        
         Self {
             browser: Browser::new(Rc::clone(&theme)),
             central: Central::new(),

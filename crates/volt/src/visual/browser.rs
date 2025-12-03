@@ -451,7 +451,7 @@ impl Browser {
     fn add_audio_entry(&mut self, path: &Path, ui: &mut Ui, theme: &Rc<ThemeColors>, button: impl Fn(&ThemeColors) -> Button<'static>) -> Response {
         let mut add_contents = |ui: &mut Ui| {
             ui.horizontal(|ui| {
-                ui.add(Image::new(include_image!("../images/icons/audio.png"))).union(ui.add(button(theme))).pipe(|response| {
+                ui.add(Image::new(include_image!("../images/icons/file_audio.svg"))).union(ui.add(button(theme))).pipe(|response| {
                     ui.ctx().request_repaint();
                     if let Some(current_data) = self.preview.data()
                         && current_data.path.as_ref().is_some_and(|current_path| **current_path == path)
@@ -507,7 +507,7 @@ impl Browser {
     }
 
     fn add_file(ui: &mut Ui, button: Button<'_>) -> Response {
-        ui.horizontal(|ui| ui.add(Image::new(include_image!("../images/icons/file.png"))) | (ui.add(button))).inner
+        ui.horizontal(|ui| ui.add(Image::new(include_image!("../images/icons/file_other.svg"))) | (ui.add(button))).inner
     }
 }
 

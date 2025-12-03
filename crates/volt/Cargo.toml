@@ -20,6 +20,7 @@ serde = "1.0.217"
 strum = { version = "0.27.2", features = ["derive"] }
 tap = "1.0.1"
 blerp = { path = "../blerp" }
+volt-waveform = { path = "../volt-waveform" }
 human-panic = "2.0.2"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 notify = { version = "8.0.0", features = ["crossbeam-channel"] }
