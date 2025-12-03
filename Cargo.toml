@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/blerp", "crates/volt", "crates/volt-waveform"]
+members = ["crates/blerp", "crates/volt"]
 resolver = "2"
 
 [workspace.package]
@@ -12,7 +12,7 @@ cpal = "0.16.0"
 itertools = "0.14.0"
 thiserror = "2.0.9"
 tracing = "0.1.41"
-volt-waveform = { git = "https://github.com/TheRedXD/volt-waveform-rs", version = "0.3.3" }
+volt-waveform = { git = "https://github.com/TheRedXD/volt-waveform-rs", branch = "master" }
 
 # Compile time and runtime optimizations
 [profile.dev]
