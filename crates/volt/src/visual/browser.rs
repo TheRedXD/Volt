@@ -566,8 +566,13 @@ impl Browser {
                             EntryKind::Audio => self.add_audio_entry(&path, ui, &Rc::clone(&self.theme), button),
                             EntryKind::File => Self::add_file(ui, button(&self.theme)),
                             EntryKind::Directory => {
-                                ui.horizontal(|ui| ui.add(self.collapsing_header_icon(f32::from(self.expanded_paths.contains(&path)))) | ui.add(button(&self.theme)))
-                                    .inner
+                                ui.horizontal(|ui| {
+                                    let icon_resp = ui.add(self.collapsing_header_icon(f32::from(self.expanded_paths.contains(&path))));
+                                    let btn_resp = ui.add(button(&self.theme));
+                                    let response = ui.interact(icon_resp.rect.union(btn_resp.rect), Id::new(("dir", &*path)), Sense::click());
+                                    icon_resp.union(btn_resp).union(response)
+                                })
+                                .inner
                             }
                         })
                         .inner
