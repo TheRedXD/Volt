@@ -9,10 +9,6 @@ cpal = { workspace = true }
 itertools = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-eframe = { version = "0.32.3", features = ["wgpu"] }
-egui = { version = "0.32.3", features = ["color-hex"] }
-egui_extras = { version = "0.32.3", features = ["all_loaders"] }
-egui_plot = "0.33.0"
 image = { version = "0.25.5", features = ["jpeg", "png"] }
 open = "5.3.2"
 rustfft = "6.2.0"
@@ -30,14 +26,14 @@ unicode-truncate = "2.0.0"
 symphonia = { version = "0.5.4", features = ["all"] }
 strsim = "0.11.1"
 unhygienic2 = "0.1.0"
+gpui = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
+core-foundation = "=0.10.0"
+core-graphics = "0.25"
 
 # TEMPORARY FIX: Fix some platform support
 [target.'cfg(target_os = "linux")'.dependencies]
 wgpu = "25"
 
-[build-dependencies]
-egui = { version = "0.32.3", features = ["color-hex"] }
-proc-macro2 = "1.0.101"
-quote = "1.0.41"
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.145"
+[target.'cfg(target_os = "macos")'.dependencies]
+core-text = ">=21.0.0, <21.1.0"

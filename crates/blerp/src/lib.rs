@@ -23,3 +23,5 @@ pub mod utils {
         unsafe { transmute_copy(&zip) }
     }
 }
+
+const SAMPLE_RATE: f64 = 48000.;
