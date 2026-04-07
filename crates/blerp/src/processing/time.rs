@@ -40,7 +40,7 @@ impl Beats {
     ///
     /// Panics if `beats` is negative.
     #[must_use]
-    pub fn from_beats(beats: f64) -> Self {
+    pub fn new(beats: f64) -> Self {
         assert!(beats >= 0., "`Beats` cannot be negative");
         Self(beats)
     }
@@ -104,6 +104,10 @@ impl Samples {
         Self { 0: samples }
     }
 
+    pub fn f64(self) -> f64 {
+        self.0
+    }
+
     pub fn u64(self) -> u64 {
         self.0 as u64
     }
@@ -113,7 +117,7 @@ impl Samples {
     }
 
     pub fn beats(self, tempo: Tempo) -> Beats {
-        Beats::from_beats(self.0 / SAMPLE_RATE as f64 * tempo.bps())
+        Beats::new(self.0 / SAMPLE_RATE as f64 * tempo.bps())
     }
 }
 

@@ -180,7 +180,7 @@ impl Playlist {
                         engine_tempo = *tempo;
                     }
                     if let Ok(preview) = preview.try_lock() {
-                        engine_preview = *preview
+                        engine_preview = *preview;
                     }
                     if let Some(preview) = engine_preview {
                         playhead.update(atomic::Ordering::Relaxed, atomic::Ordering::Relaxed, |playhead| {
@@ -273,6 +273,12 @@ impl Playlist {
 
     pub fn playhead(&self) -> Samples {
         Samples(self.playhead.load(atomic::Ordering::Relaxed) as f64)
+    }
+
+    pub fn seek(&self, position: Time) {
+        if let Some(out) = &self.out {
+            out.audio_engine_tx.send(AudioEngineMessage::Seek(position.samples(*self.tempo.lock().unwrap()))).unwrap();
+        }
     }
 }
 
