@@ -17,7 +17,7 @@ impl Tempo {
     pub fn from_bpm(bpm: f64) -> Self {
         #[allow(clippy::cast_sign_loss, reason = "bpm is always positive")]
         #[allow(clippy::cast_possible_truncation, reason = "bpm only goes up to 999.99, so never truncates")]
-        let beats_per_hectominute = (bpm as u32 * 100).clamp(1, 99999);
+        let beats_per_hectominute = ((bpm * 100.) as u32).clamp(1, 99999);
         Self { beats_per_hectominute }
     }
 
@@ -35,31 +35,30 @@ pub struct Beats(pub(crate) f64);
 
 impl Beats {
     /// Create a `Beats` from a number of beats.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `beats` is negative.
     #[must_use]
     pub fn new(beats: f64) -> Self {
-        assert!(beats >= 0., "`Beats` cannot be negative");
         Self(beats)
     }
 
+    pub fn from_u32(beats: u32) -> Self {
+        Self(f64::from(beats))
+    }
+
     #[must_use]
-    pub const fn beats(self) -> f64 {
+    pub const fn f64(self) -> f64 {
         self.0
+    }
+
+    pub fn f32(self) -> f32 {
+        self.0 as f32
+    }
+
+    pub fn u32(self) -> u32 {
+        self.0 as u32
     }
 
     pub fn samples(self, tempo: Tempo) -> Samples {
         Samples::new(self.0 / tempo.bps() * SAMPLE_RATE)
-    }
-}
-
-impl Sub for Beats {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self((self.0 - rhs.0).max(0.))
     }
 }
 
@@ -100,8 +99,7 @@ impl Ord for Samples {
 
 impl Samples {
     pub const fn new(samples: f64) -> Self {
-        assert!(samples >= 0., "`Samples` cannot be negative");
-        Self { 0: samples }
+        Self(samples)
     }
 
     pub fn f64(self) -> f64 {
@@ -118,14 +116,6 @@ impl Samples {
 
     pub fn beats(self, tempo: Tempo) -> Beats {
         Beats::new(self.0 / SAMPLE_RATE as f64 * tempo.bps())
-    }
-}
-
-impl Sub for Samples {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        Self((self.0 - rhs.0).max(0.))
     }
 }
 

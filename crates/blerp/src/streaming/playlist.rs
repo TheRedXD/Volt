@@ -55,24 +55,20 @@ pub struct PlaylistOutput {
 impl PlaylistOutput {
     fn play(&mut self) {
         self.stream.play().unwrap();
+        self.audio_engine_tx.send(AudioEngineMessage::Play).unwrap();
         self.playing = true;
     }
 
-    fn pause(&mut self) {
-        self.stream.pause().unwrap();
-        self.audio_engine_tx.send(AudioEngineMessage::Pause).unwrap();
-        self.playing = false;
-    }
-
     fn stop(&mut self) {
-        self.pause();
-        self.audio_engine_tx.send(AudioEngineMessage::Seek(Samples(0.))).unwrap();
+        self.stream.pause().unwrap();
+        self.audio_engine_tx.send(AudioEngineMessage::Stop).unwrap();
+        self.playing = false;
     }
 }
 
 enum AudioEngineMessage {
     Play,
-    Pause,
+    Stop,
     Seek(Samples),
 }
 
@@ -165,11 +161,16 @@ impl Playlist {
                 let mut next: Samples = Samples::default();
                 let mut engine_tempo = Tempo::default();
                 let mut engine_preview = *preview.lock().unwrap();
+                let mut playing = false;
                 loop {
                     if let Ok(message) = audio_engine_rx.try_recv() {
                         match message {
-                            AudioEngineMessage::Play => {}
-                            AudioEngineMessage::Pause => {}
+                            AudioEngineMessage::Play => {
+                                playing = true;
+                            }
+                            AudioEngineMessage::Stop => {
+                                playing = false;
+                            }
                             AudioEngineMessage::Seek(position) => {
                                 playhead.store(position.u64(), atomic::Ordering::Relaxed);
                                 next = position;
@@ -182,7 +183,7 @@ impl Playlist {
                     if let Ok(preview) = preview.try_lock() {
                         engine_preview = *preview;
                     }
-                    if let Some(preview) = engine_preview {
+                    if playing && let Some(preview) = engine_preview {
                         playhead.update(atomic::Ordering::Relaxed, atomic::Ordering::Relaxed, |playhead| {
                             if playhead >= preview.as_samples(engine_tempo).end.u64() {
                                 next = preview.as_samples(engine_tempo).start;
@@ -252,12 +253,6 @@ impl Playlist {
     pub fn play(&mut self) {
         if let Some(out) = &mut self.out {
             out.play();
-        }
-    }
-
-    pub fn pause(&mut self) {
-        if let Some(out) = &mut self.out {
-            out.pause();
         }
     }
 

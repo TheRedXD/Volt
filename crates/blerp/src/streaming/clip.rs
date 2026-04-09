@@ -55,7 +55,7 @@ impl ClipTimingBeats {
         ClipTiming::Beats(self)
     }
     pub fn len(self) -> Beats {
-        self.end - self.start
+        Beats::new(self.end.0 - self.start.0)
     }
 }
 
@@ -71,7 +71,7 @@ impl ClipTimingSamples {
         ClipTiming::Samples(self)
     }
     pub fn len(self) -> Samples {
-        self.end - self.start
+        Samples::new(self.end.0 - self.start.0)
     }
 }
 
