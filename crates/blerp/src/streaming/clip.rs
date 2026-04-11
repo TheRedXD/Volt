@@ -1,15 +1,20 @@
-use std::sync::Arc;
+use std::{range::Range, sync::Arc};
+
+use itertools::{Itertools, MinMaxResult};
 
 use crate::processing::time::{Beats, Samples, Tempo, Time};
 
+#[derive(Clone)]
 pub enum ClipData {
     Audio(AudioClipData),
 }
 
+#[derive(Clone)]
 pub struct AudioClipData {
     pub(crate) data: Arc<[f32]>,
 }
 
+#[derive(Clone)]
 pub struct Clip {
     pub(crate) data: ClipData,
     pub timing: ClipTiming,
@@ -19,6 +24,33 @@ impl Clip {
     pub fn data_len(&self) -> Time {
         match &self.data {
             ClipData::Audio(AudioClipData { data }) => Time::Samples(Samples(data.len() as f64)),
+        }
+    }
+
+    pub fn sample(&self, time: Time, tempo: Tempo) -> f32 {
+        match &self.data {
+            ClipData::Audio(AudioClipData { data }) => {
+                let samples = time.samples(tempo).u64();
+                if samples < data.len() as u64 {
+                    data[(samples - self.timing.as_samples(tempo).offset.u64()) as usize]
+                } else {
+                    0.
+                }
+            }
+        }
+    }
+
+    pub fn sample_range(&self, range: Range<Time>, tempo: Tempo) -> Range<f32> {
+        match &self.data {
+            ClipData::Audio(AudioClipData { data }) => {
+                let range = Range::from(range.start.samples(tempo).usize().min(data.len())..range.end.samples(tempo).usize().min(data.len()));
+                match data[range].iter().minmax() {
+                    MinMaxResult::NoElements => data[range.start]..data[range.start],
+                    MinMaxResult::OneElement(sample) => *sample..*sample,
+                    MinMaxResult::MinMax(min, max) => *min..*max,
+                }
+                .into()
+            }
         }
     }
 }

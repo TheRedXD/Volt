@@ -13,6 +13,7 @@ use std::{
 
 use cpal::traits::{DeviceTrait, StreamTrait};
 use crossbeam_channel::Sender;
+use itertools::Itertools;
 use ringbuf::{
     HeapProd, HeapRb,
     traits::{Consumer, Observer, Producer, Split},
@@ -78,10 +79,12 @@ impl Playlist {
         Self {
             playhead: Arc::new(AtomicU64::new(0)),
             tracks: {
-                let wave = |time: f64| (TAU * 440.0 * time).sin();
                 let data = Arc::from(
                     (0..SAMPLE_RATE as u32)
-                        .flat_map(|index| [wave(index as f64 / SAMPLE_RATE as f64) as f32; 2])
+                        .map(|index| {
+                            let time = f64::from(index) / SAMPLE_RATE;
+                            ((TAU * 440.0 * time).sin() * (-time * 4.).exp()) as f32
+                        })
                         .collect::<Vec<_>>()
                         .into_boxed_slice(),
                 );
@@ -106,6 +109,7 @@ impl Playlist {
                                 }),
                             },
                         ],
+                        gain: 1.,
                     },
                     Track {
                         clips: vec![Clip {
@@ -116,6 +120,7 @@ impl Playlist {
                                 offset: Beats(0.),
                             }),
                         }],
+                        gain: 1.,
                     },
                 ])
             },
@@ -138,9 +143,10 @@ impl Playlist {
                 config,
                 {
                     let playhead = Arc::clone(&self.playhead);
+                    let channels = config.channels;
                     move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                         let popped = master_rx.pop_slice(data) as u64;
-                        playhead.fetch_add(popped, atomic::Ordering::Relaxed);
+                        playhead.fetch_add(popped / u64::from(channels), atomic::Ordering::Relaxed);
                     }
                 },
                 move |err| {
@@ -156,6 +162,7 @@ impl Playlist {
             let tracks = Arc::clone(&self.tracks);
             let tempo = Arc::clone(&self.tempo);
             let preview = Arc::clone(&self.preview);
+            let channels = config.channels;
             spawn(move || {
                 const AHEAD: Samples = Samples(1024.);
                 let mut next: Samples = Samples::default();
@@ -220,15 +227,17 @@ impl Playlist {
                                                 continue;
                                             }
                                             let source = source.start..source.end.clamp(0, data.len());
-                                            for (buffer, data) in buffer[destination].iter_mut().zip(&data[source]) {
-                                                *buffer += *data;
+                                            for (buffer, data) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&data[source]) {
+                                                for sample in buffer {
+                                                    *sample = (*data).mul_add(track.gain, *sample);
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                             master_tx.push_slice(&buffer);
-                            next += Samples(vacant);
+                            next += Samples(vacant / f64::from(channels));
                         }
                         cmp::Ordering::Greater | cmp::Ordering::Equal => {
                             sleep(Duration::from_millis(5));

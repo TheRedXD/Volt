@@ -1,6 +1,9 @@
 #![warn(clippy::pedantic, clippy::nursery, clippy::allow_attributes_without_reason, clippy::undocumented_unsafe_blocks, clippy::clone_on_ref_ptr)]
 use std::{
+    array::from_fn,
     borrow::Cow,
+    fmt::Display,
+    ops::{DerefMut, Sub, SubAssign},
     sync::{Arc, Mutex},
     time::Instant,
 };
@@ -14,12 +17,12 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    App, AssetSource, Bounds, Context, Entity, MouseButton, PathBuilder, Pixels, Point, Rems, Rgba, SharedString, Size, WeakEntity, Window, WindowBounds, WindowOptions, canvas, div, hsla, img,
-    linear_color_stop, linear_gradient, pattern_slash, point, prelude::*, px, rems, rgb, rgba, size,
+    App, AssetSource, Bounds, Context, Entity, KeyBinding, MouseButton, PathBuilder, Pixels, Point, Rems, Rgba, SharedString, Size, WeakEntity, Window, WindowBounds, WindowOptions, actions, canvas,
+    div, hsla, img, linear_color_stop, linear_gradient, pattern_slash, point, prelude::*, px, rems, rgb, rgba, size,
 };
 use gpui_platform::application;
 use itertools::Itertools;
-use tap::{Pipe, Tap};
+use tap::{Conv, Pipe, Tap};
 
 struct PlaylistView {
     inner: Playlist,
@@ -76,6 +79,8 @@ impl Default for Snapping {
         Self::Beats { divisor: 4 }
     }
 }
+
+actions!([TogglePlay]);
 
 impl Render for PlaylistView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -201,6 +206,8 @@ impl Render for PlaylistView {
                     .relative()
                     .size_full()
                     .gap_1()
+                    .id("tracks")
+                    .overflow_y_scroll()
                     .on_pinch(cx.listener(|view, event: &gpui::PinchEvent, window, cx| {
                         let delta = event.delta;
                         let old = view.zoom;
@@ -255,6 +262,23 @@ impl Render for PlaylistView {
                         .inset_0()
                         .h_full(),
                     )
+                    .children(
+                        self.hovered_position
+                            .map(|hovered_position| div().w_px().bg(self.theme.playhead_hover).absolute().top_0().bottom_0().left(hovered_position.x)),
+                    )
+                    .child(div().w_px().bg(self.theme.playhead).absolute().top_0().bottom_0().left(playhead_x))
+                    .children(self.inner.preview.lock().unwrap().into_iter().flat_map(|preview| {
+                        let timing = preview.as_beats(tempo);
+                        [timing.start, timing.end].map(|time| {
+                            div()
+                                .w_px()
+                                .bg(self.theme.preview)
+                                .absolute()
+                                .top_0()
+                                .bottom_0()
+                                .left(rems(time.f32() / self.inner.time_signature.beats_per_measure as f32 * self.zoom.width.0) + self.pan.x)
+                        })
+                    }))
                     .children(self.inner.tracks().iter().enumerate().map(|(index, track)| {
                         div()
                             .relative()
@@ -272,28 +296,74 @@ impl Render for PlaylistView {
                                     .bg(pattern_slash(hsla(0., 0., 0.2, 1.), 2., 5.))
                                     .overflow_hidden()
                                     .rounded_md()
-                                    .p_2()
-                                    .child(div().absolute().left_0().top_0().bottom_0().w(self.beats_to_width(clip.data_len().beats(tempo))).bg(rgb(0x00ff00)))
-                                    .child(format!("{} - {}", clip.timing.as_beats(tempo).start.f64(), clip.timing.as_beats(tempo).end.f64()))
+                                    .border_1()
+                                    .border_color(self.theme.navbar_outline)
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .left_0()
+                                            .top_0()
+                                            .bottom_0()
+                                            .w(self.beats_to_width(clip.data_len().beats(tempo)))
+                                            .bg(self.theme.central_background),
+                                    )
+                                    .child(
+                                        canvas(|_, _, _| {}, {
+                                            let view = cx.entity().downgrade();
+                                            let clip = clip.clone();
+                                            move |bounds, (), window, cx| {
+                                                let view = view.upgrade().unwrap().read(cx);
+                                                let window_size = clip.data_len().samples(tempo).f64() / view.beats_to_width(clip.data_len().beats(tempo)).to_pixels(window.rem_size()).to_f64();
+                                                let left = bounds.left();
+                                                let bounds = bounds.intersect(&window.bounds());
+                                                if bounds.is_empty() {
+                                                    return;
+                                                }
+                                                let paths = ((bounds.left() - left).conv::<u32>()
+                                                    ..view
+                                                        .beats_to_width(clip.data_len().beats(tempo))
+                                                        .to_pixels(window.rem_size())
+                                                        .min(bounds.left() - left + bounds.size.width)
+                                                        .conv::<u32>())
+                                                    .fold(
+                                                        from_fn(|_| PathBuilder::stroke(px(2.)).tap_mut(|builder| builder.move_to(bounds.center().tap_mut(|point| point.x = left)))),
+                                                        |mut builders: [_; 2], x| {
+                                                            let x = f64::from(x);
+                                                            let start = x * window_size;
+                                                            let end = start + window_size;
+                                                            let range = clip.sample_range((Time::Samples(Samples::new(start))..Time::Samples(Samples::new(end))).into(), tempo);
+                                                            for (sample, builder) in [range.start, range.end].iter().zip(&mut builders) {
+                                                                builder.line_to(point(x.conv::<Pixels>() + left, bounds.center().y + bounds.size.height / 2. * *sample));
+                                                            }
+                                                            builders
+                                                        },
+                                                    )
+                                                    .map(PathBuilder::build)
+                                                    .map(Result::unwrap);
+                                                for path in paths {
+                                                    window.paint_path(path, view.theme.accent);
+                                                }
+                                            }
+                                        })
+                                        .size_full(),
+                                    )
                             }))
-                            .child(div().absolute().right_0().top_0().h_full().p_4().child(format!("Track {}", index + 1)))
-                    }))
-                    .children(
-                        self.hovered_position
-                            .map(|hovered_position| div().w_px().bg(self.theme.playhead_hover).absolute().top_0().bottom_0().left(hovered_position.x)),
-                    )
-                    .child(div().w_px().bg(self.theme.playhead).absolute().top_0().bottom_0().left(playhead_x))
-                    .children(self.inner.preview.lock().unwrap().into_iter().flat_map(|preview| {
-                        let timing = preview.as_beats(tempo);
-                        [timing.start, timing.end].map(|time| {
-                            div()
-                                .w_px()
-                                .bg(self.theme.preview)
-                                .absolute()
-                                .top_0()
-                                .bottom_0()
-                                .left(rems(time.f32() / self.inner.time_signature.beats_per_measure as f32 * self.zoom.width.0) + self.pan.x)
-                        })
+                            .child(
+                                div()
+                                    .absolute()
+                                    .right_0()
+                                    .top_0()
+                                    .h_full()
+                                    .p_4()
+                                    .bg(self.theme.central_background)
+                                    .rounded_md()
+                                    .border_1()
+                                    .border_color(self.theme.navbar_outline)
+                                    .id(format!("track-{}", index + 1))
+                                    .overflow_y_scroll()
+                                    .child(format!("Track {}", index + 1))
+                                    .child(format!("Gain {:.02}", track.gain)),
+                            )
                     })),
             )
     }
@@ -322,6 +392,21 @@ impl Render for Volt {
             .bg(self.theme.central_background)
             .text_color(self.theme.bg_text)
             .font_family("Inter")
+            .on_action({
+                let playlist = self.playlist.downgrade();
+                move |_: &TogglePlay, _, cx| {
+                    playlist
+                        .update(cx, |playlist, cx| {
+                            if playlist.inner.playing() {
+                                playlist.inner.stop();
+                            } else {
+                                playlist.inner.play();
+                            }
+                            cx.notify();
+                        })
+                        .unwrap();
+                }
+            })
             .child(
                 div()
                     .flex()
@@ -582,7 +667,7 @@ fn main() {
                 Cow::Borrowed(include_bytes!("fonts/inter/Inter.ttf")),
             ])
             .unwrap();
-
+        cx.bind_keys([KeyBinding::new("space", TogglePlay, None)]);
         let bounds = Bounds::centered(None, size(px(500.), px(500.0)), cx);
         cx.open_window(
             WindowOptions {
