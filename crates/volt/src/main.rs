@@ -10,7 +10,7 @@ use std::{
 
 use blerp::{
     processing::time::{Beats, Samples, Tempo, Time},
-    streaming::playlist::Playlist,
+    streaming::playlist::{Playlist, PlaylistAudio},
 };
 use cpal::{
     default_host,
@@ -25,7 +25,7 @@ use itertools::Itertools;
 use tap::{Conv, Pipe, Tap};
 
 struct PlaylistView {
-    inner: Playlist,
+    audio: PlaylistAudio,
     /// The zoom factor for the playlist view. `size(16., 4.)` means a measure is 16 rems wide and a track is 4 rems high.
     zoom: Size<Rems>,
     snapping: Snapping,
@@ -38,12 +38,12 @@ struct PlaylistView {
 
 impl PlaylistView {
     pub fn new(theme: Arc<ThemeColors>) -> Self {
-        let mut inner = Playlist::new();
+        let mut inner = PlaylistAudio::new();
         let device = default_host().default_output_device().unwrap();
         let config = device.default_output_config().unwrap().config();
         inner.device_out(&device, &config);
         Self {
-            inner,
+            audio: inner,
             zoom: size(rems(16.), rems(4.)),
             snapping: Snapping::default(),
             hovered_position: None,
@@ -57,11 +57,11 @@ impl PlaylistView {
     }
 
     fn beats_to_width(&self, beats: Beats) -> Rems {
-        rems(beats.f64() as f32 / self.inner.time_signature.beats_per_measure as f32 * self.zoom.width.0)
+        rems(beats.f64() as f32 / self.audio.playlist().time_signature.beats_per_measure as f32 * self.zoom.width.0)
     }
 
     fn width_to_beats(&self, width: Pixels, rem_size: Pixels) -> Beats {
-        Beats::new(width.to_f64() / self.zoom_pixels(rem_size).width.to_f64() * f64::from(self.inner.time_signature.beats_per_measure))
+        Beats::new(width.to_f64() / self.zoom_pixels(rem_size).width.to_f64() * f64::from(self.audio.playlist().time_signature.beats_per_measure))
     }
 }
 
@@ -84,11 +84,11 @@ actions!([TogglePlay]);
 
 impl Render for PlaylistView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.inner.playing() {
+        if self.audio.playing() {
             window.request_animation_frame();
         }
-        let tempo = *self.inner.tempo.lock().unwrap();
-        let playhead_x = self.beats_to_width(self.inner.playhead().beats(tempo)) + self.pan.x;
+        let tempo = self.audio.playlist().tempo;
+        let playhead_x = self.beats_to_width(self.audio.playhead().beats(tempo)) + self.pan.x;
         div()
             .flex()
             .flex_col()
@@ -101,22 +101,26 @@ impl Render for PlaylistView {
                         div()
                             .flex()
                             .gap_2()
-                            .child(div().child(format!("{} / {}", self.inner.time_signature.beats_per_measure, self.inner.time_signature.beat_unit)))
-                            .child(if self.inner.playing() { "Playing" } else { "Stopped" }),
+                            .child(div().child(format!(
+                                "{} / {}",
+                                self.audio.playlist().time_signature.beats_per_measure,
+                                self.audio.playlist().time_signature.beat_unit
+                            )))
+                            .child(if self.audio.playing() { "Playing" } else { "Stopped" }),
                     )
                     .child(
                         div().flex().gap_2().children(
                             [
-                                ("Play", &Playlist::play as &dyn Fn(&mut Playlist)),
-                                ("Pause", &Playlist::stop as &dyn Fn(&mut Playlist)),
-                                ("Stop", &Playlist::stop as &dyn Fn(&mut Playlist)),
+                                ("Play", &PlaylistAudio::play as &dyn Fn(&mut PlaylistAudio)),
+                                ("Pause", &PlaylistAudio::stop as &dyn Fn(&mut PlaylistAudio)),
+                                ("Stop", &PlaylistAudio::stop as &dyn Fn(&mut PlaylistAudio)),
                             ]
                             .map(|(text, method)| {
                                 div()
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(|view, _, _, cx| {
-                                            method(&mut view.inner);
+                                            method(&mut view.audio);
                                             cx.notify();
                                         }),
                                     )
@@ -140,7 +144,7 @@ impl Render for PlaylistView {
                         MouseButton::Left,
                         cx.listener(|view, _: &gpui::MouseDownEvent, window, cx| {
                             let Some(hovered_position) = view.hovered_position else { return };
-                            view.inner
+                            view.audio
                                 .seek(Time::Beats(view.width_to_beats(hovered_position.x - view.pan.x.to_pixels(window.rem_size()), window.rem_size())));
                             cx.notify();
                         }),
@@ -149,20 +153,20 @@ impl Render for PlaylistView {
                         let hovered_position = event.position;
                         view.hovered_position = Some(hovered_position);
                         if event.dragging() {
-                            view.inner
+                            view.audio
                                 .seek(Time::Beats(view.width_to_beats(hovered_position.x - view.pan.x.to_pixels(window.rem_size()), window.rem_size())));
                         }
                         cx.notify();
                     }))
                     .children(
-                        (0..=self.width_to_beats(window.bounds().size.width, window.rem_size()).u32() + self.inner.time_signature.beats_per_measure).map(|beat| {
+                        (0..=self.width_to_beats(window.bounds().size.width, window.rem_size()).u32() + self.audio.playlist().time_signature.beats_per_measure).map(|beat| {
                             let x = (self.beats_to_width(Beats::from_u32(beat)) + rems(self.pan.x.0.rem_euclid(self.zoom.width.0) - self.zoom.width.0)).to_pixels(window.rem_size());
                             let beat = self.width_to_beats(x - self.pan.x.to_pixels(window.rem_size()), window.rem_size()).f32().round() as i32;
                             div().absolute().top_0().left(x).child(format!(
                                 "{}{}.{}",
                                 if beat < 0 { "-" } else { "" },
-                                (beat / self.inner.time_signature.beats_per_measure.cast_signed()).abs(),
-                                (beat % self.inner.time_signature.beats_per_measure.cast_signed()).abs()
+                                (beat / self.audio.playlist().time_signature.beats_per_measure.cast_signed()).abs(),
+                                (beat % self.audio.playlist().time_signature.beats_per_measure.cast_signed()).abs()
                             ))
                         }),
                     )
@@ -173,11 +177,11 @@ impl Render for PlaylistView {
                             .gap_2()
                             .text_color(self.theme.playhead)
                             .bg(self.theme.central_background)
-                            .child(format!("{:.02} s", self.inner.playhead().beats(tempo).f64() / tempo.bps()))
+                            .child(format!("{:.02} s", self.audio.playhead().beats(tempo).f64() / tempo.bps()))
                             .child(format!(
                                 "{}.{}",
-                                self.inner.playhead().beats(tempo).u32() / self.inner.time_signature.beats_per_measure,
-                                self.inner.playhead().beats(tempo).u32() % self.inner.time_signature.beats_per_measure,
+                                self.audio.playhead().beats(tempo).u32() / self.audio.playlist().time_signature.beats_per_measure,
+                                self.audio.playhead().beats(tempo).u32() % self.audio.playlist().time_signature.beats_per_measure,
                             ))
                             .left(playhead_x),
                     )
@@ -192,8 +196,8 @@ impl Render for PlaylistView {
                             .child(format!("{:.02} s", next.f64() / tempo.bps()))
                             .child(format!(
                                 "{}.{}",
-                                next.u32() / self.inner.time_signature.beats_per_measure,
-                                next.u32() % self.inner.time_signature.beats_per_measure,
+                                next.u32() / self.audio.playlist().time_signature.beats_per_measure,
+                                next.u32() % self.audio.playlist().time_signature.beats_per_measure,
                             ))
                             .left(hovered_position.x)
                     })),
@@ -241,7 +245,7 @@ impl Render for PlaylistView {
                             let view = cx.entity().downgrade();
                             move |bounds, (), window, cx| {
                                 let Some(view) = view.upgrade().map(|entity| entity.read(cx)) else { return };
-                                let beats_per_measure = view.inner.time_signature.beats_per_measure;
+                                let beats_per_measure = view.audio.playlist().time_signature.beats_per_measure;
                                 let (measure_builder, beat_builder) = (0..=view.width_to_beats(bounds.size.width, window.rem_size()).u32() + beats_per_measure).fold(
                                     (PathBuilder::stroke(px(2.)), PathBuilder::stroke(px(1.))),
                                     |(mut measure_builder, mut beat_builder), beat| {
@@ -267,7 +271,7 @@ impl Render for PlaylistView {
                             .map(|hovered_position| div().w_px().bg(self.theme.playhead_hover).absolute().top_0().bottom_0().left(hovered_position.x)),
                     )
                     .child(div().w_px().bg(self.theme.playhead).absolute().top_0().bottom_0().left(playhead_x))
-                    .children(self.inner.preview.lock().unwrap().into_iter().flat_map(|preview| {
+                    .children(self.audio.playlist().preview.into_iter().flat_map(|preview| {
                         let timing = preview.as_beats(tempo);
                         [timing.start, timing.end].map(|time| {
                             div()
@@ -276,10 +280,10 @@ impl Render for PlaylistView {
                                 .absolute()
                                 .top_0()
                                 .bottom_0()
-                                .left(rems(time.f32() / self.inner.time_signature.beats_per_measure as f32 * self.zoom.width.0) + self.pan.x)
+                                .left(rems(time.f32() / self.audio.playlist().time_signature.beats_per_measure as f32 * self.zoom.width.0) + self.pan.x)
                         })
                     }))
-                    .children(self.inner.tracks().iter().enumerate().map(|(index, track)| {
+                    .children(self.audio.playlist().tracks().iter().enumerate().map(|(index, track)| {
                         div()
                             .relative()
                             .h(self.zoom.height)
@@ -397,10 +401,10 @@ impl Render for Volt {
                 move |_: &TogglePlay, _, cx| {
                     playlist
                         .update(cx, |playlist, cx| {
-                            if playlist.inner.playing() {
-                                playlist.inner.stop();
+                            if playlist.audio.playing() {
+                                playlist.audio.stop();
                             } else {
-                                playlist.inner.play();
+                                playlist.audio.play();
                             }
                             cx.notify();
                         })
@@ -454,112 +458,111 @@ impl Render for Volt {
                                 MouseButton::Left,
                                 cx.listener(|app, _, _, cx| {
                                     app.playlist.update(cx, |playlist, cx| {
-                                        if playlist.inner.playing() {
-                                            playlist.inner.stop();
+                                        if playlist.audio.playing() {
+                                            playlist.audio.stop();
                                         } else {
-                                            playlist.inner.play();
+                                            playlist.audio.play();
                                         }
                                         cx.notify();
                                     });
                                 }),
                             ))
                             .child({
-                                div()
-                                    .child(format!("BPM: {:.02}", self.playlist.read(cx).inner.tempo.lock().unwrap().bpm()))
-                                    .id("bpm")
-                                    .hoverable_tooltip({
-                                        let playlist = self.playlist.downgrade();
-                                        move |_, cx| {
-                                            const TAP_WINDOW: usize = 10;
-                                            struct Tooltip {
-                                                playlist: WeakEntity<PlaylistView>,
-                                                tap_times: [Option<Instant>; TAP_WINDOW],
-                                                tap_index: usize,
-                                            }
-                                            impl Render for Tooltip {
-                                                fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-                                                    let playlist = self.playlist.upgrade().unwrap().read(cx);
-                                                    let theme = &playlist.theme;
-                                                    div()
-                                                        .flex_col()
-                                                        .bg(theme.notification_background)
-                                                        .text_color(theme.bg_text)
-                                                        .items_center()
-                                                        .gap_4()
-                                                        .p_4()
-                                                        .rounded_md()
-                                                        .shadow_md()
-                                                        .block_mouse_except_scroll()
-                                                        .child(div().child("+").on_mouse_down(
-                                                            MouseButton::Left,
-                                                            cx.listener(|tooltip, _, _, cx| {
-                                                                {
-                                                                    let mut tempo = tooltip.playlist.upgrade().unwrap().read(cx).inner.tempo.lock().unwrap();
-                                                                    *tempo = Tempo::from_bpm(tempo.bpm() + 1.);
-                                                                }
-                                                                cx.notify();
-                                                            }),
-                                                        ))
-                                                        .child(
-                                                            div()
-                                                                .text_3xl()
-                                                                .cursor_row_resize()
-                                                                .on_scroll_wheel(cx.listener(|tooltip, event: &gpui::ScrollWheelEvent, window, cx| {
-                                                                    let playlist = tooltip.playlist.upgrade().unwrap().read(cx);
-                                                                    let (previous, next) = {
-                                                                        let mut tempo = playlist.inner.tempo.lock().unwrap();
-                                                                        let previous = tempo.bpm();
-                                                                        *tempo = Tempo::from_bpm(tempo.bpm() - event.delta.pixel_delta(window.rem_size()).y.to_f64());
-                                                                        (previous, tempo.bpm())
-                                                                    };
-                                                                    playlist.inner.seek(Time::Samples(Samples::new(playlist.inner.playhead().f64() * previous / next)));
-                                                                    cx.notify();
-                                                                }))
-                                                                .child(format!("{:.02}", playlist.inner.tempo.lock().unwrap().bpm())),
-                                                        )
-                                                        .child(div().child("-").on_mouse_down(
-                                                            MouseButton::Left,
-                                                            cx.listener(|tooltip, _, _, cx| {
-                                                                {
-                                                                    let mut tempo = tooltip.playlist.upgrade().unwrap().read(cx).inner.tempo.lock().unwrap();
-                                                                    *tempo = Tempo::from_bpm(tempo.bpm() - 1.);
-                                                                }
-                                                                cx.notify();
-                                                            }),
-                                                        ))
-                                                        .child(div().child("Tap").on_mouse_down(
-                                                            MouseButton::Left,
-                                                            cx.listener(|tooltip, _, _, cx| {
-                                                                tooltip.tap_times[tooltip.tap_index] = Some(Instant::now());
-                                                                tooltip.tap_index = (tooltip.tap_index + 1) % TAP_WINDOW;
-                                                                let mut times = tooltip.tap_times.iter().copied().flatten().collect_vec();
-                                                                let other = times.split_off(tooltip.tap_index);
-                                                                if times.len() + other.len() < 2 {
-                                                                    return;
-                                                                }
-                                                                *tooltip.playlist.upgrade().unwrap().read(cx).inner.tempo.lock().unwrap() = Tempo::from_bpm(
-                                                                    other
-                                                                        .into_iter()
-                                                                        .chain(times)
-                                                                        .tuple_windows()
-                                                                        .map(|(a, b)| 60. / (b - a).as_secs_f64())
-                                                                        .fold((0., 0.), |(sum, count), bpm| (sum + bpm, count + 1.))
-                                                                        .pipe(|(sum, count)| sum / count),
-                                                                );
-                                                                cx.notify();
-                                                            }),
-                                                        ))
-                                                }
-                                            }
-                                            let playlist = playlist.clone();
-                                            cx.new(move |_| Tooltip {
-                                                playlist,
-                                                tap_times: [None; TAP_WINDOW],
-                                                tap_index: 0,
-                                            })
-                                            .into()
+                                div().child(format!("BPM: {:.02}", self.playlist.read(cx).audio.playlist().tempo.bpm())).id("bpm").hoverable_tooltip({
+                                    let playlist = self.playlist.downgrade();
+                                    move |_, cx| {
+                                        const TAP_WINDOW: usize = 10;
+                                        struct Tooltip {
+                                            playlist_view: WeakEntity<PlaylistView>,
+                                            tap_times: [Option<Instant>; TAP_WINDOW],
+                                            tap_index: usize,
                                         }
-                                    })
+                                        impl Render for Tooltip {
+                                            fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+                                                let playlist = self.playlist_view.upgrade().unwrap().read(cx);
+                                                let theme = &playlist.theme;
+                                                div()
+                                                    .flex_col()
+                                                    .bg(theme.notification_background)
+                                                    .text_color(theme.bg_text)
+                                                    .items_center()
+                                                    .gap_4()
+                                                    .p_4()
+                                                    .rounded_md()
+                                                    .shadow_md()
+                                                    .block_mouse_except_scroll()
+                                                    .child(div().child("+").on_mouse_down(
+                                                        MouseButton::Left,
+                                                        cx.listener(|tooltip, _, _, cx| {
+                                                            tooltip.playlist_view.upgrade().unwrap().update(cx, |playlist, _| {
+                                                                playlist.audio.update_tempo(|tempo| Tempo::from_bpm(tempo.bpm() + 1.));
+                                                            });
+                                                            cx.notify();
+                                                        }),
+                                                    ))
+                                                    .child(
+                                                        div()
+                                                            .text_3xl()
+                                                            .cursor_row_resize()
+                                                            .on_scroll_wheel(cx.listener(|tooltip, event: &gpui::ScrollWheelEvent, window, cx| {
+                                                                tooltip.playlist_view.upgrade().unwrap().update(cx, |playlist, _| {
+                                                                    let previous = playlist
+                                                                        .audio
+                                                                        .update_tempo(|tempo| Tempo::from_bpm(tempo.bpm() + event.delta.pixel_delta(window.rem_size()).y.to_f64()))
+                                                                        .bpm();
+                                                                    let (previous, next) = (previous, playlist.audio.playlist().tempo.bpm());
+                                                                    playlist.audio.seek(Time::Samples(Samples::new(playlist.audio.playhead().f64() * previous / next)));
+                                                                });
+                                                                cx.notify();
+                                                            }))
+                                                            .child(format!("{:.02}", playlist.audio.playlist().tempo.bpm())),
+                                                    )
+                                                    .child(div().child("-").on_mouse_down(
+                                                        MouseButton::Left,
+                                                        cx.listener(|tooltip, _, _, cx| {
+                                                            tooltip.playlist_view.upgrade().unwrap().update(cx, |playlist, _| {
+                                                                playlist.audio.update_tempo(|tempo| Tempo::from_bpm(tempo.bpm() - 1.));
+                                                            });
+                                                            cx.notify();
+                                                        }),
+                                                    ))
+                                                    .child(div().child("Tap").on_mouse_down(
+                                                        MouseButton::Left,
+                                                        cx.listener(|tooltip, _, _, cx| {
+                                                            tooltip.tap_times[tooltip.tap_index] = Some(Instant::now());
+                                                            tooltip.tap_index = (tooltip.tap_index + 1) % TAP_WINDOW;
+                                                            let mut times = tooltip.tap_times.iter().copied().flatten().collect_vec();
+                                                            let other = times.split_off(tooltip.tap_index);
+                                                            if times.len() + other.len() < 2 {
+                                                                return;
+                                                            }
+                                                            tooltip.playlist_view.upgrade().unwrap().update(cx, |playlist, _| {
+                                                                playlist.audio.update_tempo(|_| {
+                                                                    Tempo::from_bpm(
+                                                                        other
+                                                                            .into_iter()
+                                                                            .chain(times)
+                                                                            .tuple_windows()
+                                                                            .map(|(a, b)| 60. / (b - a).as_secs_f64())
+                                                                            .fold((0., 0.), |(sum, count), bpm| (sum + bpm, count + 1.))
+                                                                            .pipe(|(sum, count)| sum / count),
+                                                                    )
+                                                                })
+                                                            });
+                                                            cx.notify();
+                                                        }),
+                                                    ))
+                                            }
+                                        }
+                                        let playlist = playlist.clone();
+                                        cx.new(move |_| Tooltip {
+                                            playlist_view: playlist,
+                                            tap_times: [None; TAP_WINDOW],
+                                            tap_index: 0,
+                                        })
+                                        .into()
+                                    }
+                                })
                             }),
                     ),
             )
