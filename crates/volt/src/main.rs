@@ -17,8 +17,9 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    App, AssetSource, Bounds, Context, Entity, KeyBinding, MouseButton, PathBuilder, Pixels, Point, Rems, Rgba, SharedString, Size, WeakEntity, Window, WindowBounds, WindowOptions, actions, canvas,
-    div, hsla, img, linear_color_stop, linear_gradient, pattern_slash, point, prelude::*, px, rems, rgb, rgba, size,
+    App, AssetSource, Bounds, Context, Div, DivFrameState, ElementId, Empty, Entity, FocusHandle, Hitbox, KeyBinding, LayoutId, MouseButton, PathBuilder, Pixels, Point, Rems, Rgba, SharedString,
+    Size, Stateful, Style, StyleRefinement, WeakEntity, Window, WindowBounds, WindowOptions, actions, canvas, deferred, div, hsla, img, linear_color_stop, linear_gradient, pattern_slash, point,
+    prelude::*, px, rems, rgb, rgba, size,
 };
 use gpui_platform::application;
 use itertools::Itertools;
@@ -32,6 +33,7 @@ struct PlaylistView {
     pan: Point<Rems>,
 
     hovered_position: Option<Point<Pixels>>,
+    bounds: Bounds<Pixels>,
 
     theme: Arc<ThemeColors>,
 }
@@ -48,6 +50,7 @@ impl PlaylistView {
             snapping: Snapping::default(),
             hovered_position: None,
             pan: Point::new(rems(0.), rems(0.)),
+            bounds: Bounds::default(),
             theme,
         }
     }
@@ -82,6 +85,95 @@ impl Default for Snapping {
 
 actions!([TogglePlay]);
 
+type AdjustableInputSet<V> = dyn Fn(V, &mut App) + 'static;
+
+trait AdjustableInputValue: Display + 'static + Sized + Clone {
+    fn apply_delta(self, delta: f32) -> Self;
+}
+
+impl AdjustableInputValue for u32 {
+    fn apply_delta(self, delta: f32) -> Self {
+        (self as f32 + delta).round().max(0.) as u32
+    }
+}
+
+impl AdjustableInputValue for f32 {
+    fn apply_delta(self, delta: f32) -> Self {
+        self + delta
+    }
+}
+
+impl AdjustableInputValue for f64 {
+    fn apply_delta(self, delta: f32) -> Self {
+        self + Self::from(delta)
+    }
+}
+
+#[derive(IntoElement)]
+struct AdjustableInput<V: AdjustableInputValue> {
+    value: V,
+    theme: Arc<ThemeColors>,
+    set: Box<AdjustableInputSet<V>>,
+    name: SharedString,
+    scale: f32,
+}
+
+impl<V: AdjustableInputValue> RenderOnce for AdjustableInput<V> {
+    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
+        struct Payload<V: AdjustableInputValue>(Point<Pixels>, V, SharedString);
+        div()
+            .child(div().child(format!("{:.02}", self.value)))
+            .rounded_md()
+            .border_1()
+            .border_color(self.theme.navbar_outline)
+            .cursor_ns_resize()
+            .py_1()
+            .px_2()
+            .id(self.name.clone())
+            .on_drag(Payload(window.mouse_position(), self.value, self.name.clone().into()), move |_, _, _, cx| cx.new(|_| Empty))
+            .on_drag_move({
+                let name = self.name.clone();
+                move |event: &gpui::DragMoveEvent<Payload<V>>, _, cx| {
+                    if event.drag(cx).2 != name {
+                        return;
+                    }
+                    cx.stop_propagation();
+                    let delta = (event.drag(cx).0.y - event.event.position.y).as_f32() * self.scale * if event.event.modifiers.shift { 0.2 } else { 1. };
+                    let value = event.drag(cx).1.clone().apply_delta(delta);
+                    (self.set)(value, cx);
+                }
+            })
+            .tooltip({
+                let name = self.name.clone();
+                move |_, cx| {
+                    struct Tooltip {
+                        name: SharedString,
+                        theme: Arc<ThemeColors>,
+                    }
+
+                    impl Render for Tooltip {
+                        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+                            div()
+                                .bg(self.theme.central_background)
+                                .text_color(self.theme.bg_text)
+                                .rounded_md()
+                                .p_2()
+                                .border_1()
+                                .border_color(self.theme.navbar_outline)
+                                .shadow_sm()
+                                .child(self.name.clone())
+                        }
+                    }
+                    cx.new(|_| Tooltip {
+                        name: name.clone(),
+                        theme: Arc::clone(&self.theme),
+                    })
+                    .into()
+                }
+            })
+    }
+}
+
 impl Render for PlaylistView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.audio.playing() {
@@ -89,45 +181,25 @@ impl Render for PlaylistView {
         }
         let tempo = self.audio.playlist().tempo;
         let playhead_x = self.beats_to_width(self.audio.playhead().beats(tempo)) + self.pan.x;
+
         div()
             .flex()
             .flex_col()
             .flex_grow()
+            .relative()
+            .overflow_hidden()
             .child(
-                div()
-                    .flex()
-                    .gap_8()
-                    .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .child(div().child(format!(
-                                "{} / {}",
-                                self.audio.playlist().time_signature.beats_per_measure,
-                                self.audio.playlist().time_signature.beat_unit
-                            )))
-                            .child(if self.audio.playing() { "Playing" } else { "Stopped" }),
-                    )
-                    .child(
-                        div().flex().gap_2().children(
-                            [
-                                ("Play", &PlaylistAudio::play as &dyn Fn(&mut PlaylistAudio)),
-                                ("Pause", &PlaylistAudio::stop as &dyn Fn(&mut PlaylistAudio)),
-                                ("Stop", &PlaylistAudio::stop as &dyn Fn(&mut PlaylistAudio)),
-                            ]
-                            .map(|(text, method)| {
-                                div()
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(|view, _, _, cx| {
-                                            method(&mut view.audio);
-                                            cx.notify();
-                                        }),
-                                    )
-                                    .child(text)
-                            }),
-                        ),
-                    ),
+                canvas(|_, _, _| {}, {
+                    let view = cx.entity().downgrade();
+                    move |bounds, (), _, cx| {
+                        view.update(cx, |view, _| {
+                            view.bounds = bounds;
+                        })
+                        .unwrap();
+                    }
+                })
+                .absolute()
+                .inset_0(),
             )
             .child(
                 div()
@@ -150,7 +222,7 @@ impl Render for PlaylistView {
                         }),
                     )
                     .on_mouse_move(cx.listener(|view, event: &gpui::MouseMoveEvent, window, cx| {
-                        let hovered_position = event.position;
+                        let hovered_position = event.position.tap_mut(|position| position.x -= view.bounds.left());
                         view.hovered_position = Some(hovered_position);
                         if event.dragging() {
                             view.audio
@@ -218,9 +290,10 @@ impl Render for PlaylistView {
                         view.zoom = view.zoom.map(|length| length * (delta + 1.));
                         view.zoom.width.0 = view.zoom.width.0.max(8.);
                         view.zoom.height.0 = view.zoom.height.0.max(2.);
+                        let position = event.position.relative_to(&view.bounds.origin);
                         view.pan = point(
-                            rems((event.position.x - (event.position.x - view.pan.x.to_pixels(window.rem_size())) * view.zoom.width.0 / old.width.0) / window.rem_size()),
-                            rems((event.position.y - (event.position.y - view.pan.y.to_pixels(window.rem_size())) * view.zoom.height.0 / old.height.0) / window.rem_size()),
+                            rems((position.x - (position.x - view.pan.x.to_pixels(window.rem_size())) * view.zoom.width.0 / old.width.0) / window.rem_size()),
+                            rems((position.y - (position.y - view.pan.y.to_pixels(window.rem_size())) * view.zoom.height.0 / old.height.0) / window.rem_size()),
                         );
                         cx.notify();
                     }))
@@ -231,9 +304,10 @@ impl Render for PlaylistView {
                             view.zoom.width.0 = (view.zoom.width.0 * factor.x).max(8.);
                             view.zoom.height.0 = (view.zoom.height.0 * factor.y).max(2.);
                             let factor = point(view.zoom.width.0 / old.width.0, view.zoom.height.0 / old.height.0);
+                            let position = event.position.relative_to(&view.bounds.origin);
                             view.pan = point(
-                                rems((event.position.x - (event.position.x - view.pan.x.to_pixels(window.rem_size())) * factor.x) / window.rem_size()),
-                                rems((event.position.y - (event.position.y - view.pan.y.to_pixels(window.rem_size())) * factor.y) / window.rem_size()),
+                                rems((position.x - (position.x - view.pan.x.to_pixels(window.rem_size())) * factor.x) / window.rem_size()),
+                                rems((position.y - (position.y - view.pan.y.to_pixels(window.rem_size())) * factor.y) / window.rem_size()),
                             );
                         } else {
                             view.pan = view.pan + event.delta.pixel_delta(window.rem_size()).map(|length| rems(length / window.rem_size()));
@@ -266,23 +340,6 @@ impl Render for PlaylistView {
                         .inset_0()
                         .h_full(),
                     )
-                    .children(
-                        self.hovered_position
-                            .map(|hovered_position| div().w_px().bg(self.theme.playhead_hover).absolute().top_0().bottom_0().left(hovered_position.x)),
-                    )
-                    .child(div().w_px().bg(self.theme.playhead).absolute().top_0().bottom_0().left(playhead_x))
-                    .children(self.audio.playlist().preview.into_iter().flat_map(|preview| {
-                        let timing = preview.as_beats(tempo);
-                        [timing.start, timing.end].map(|time| {
-                            div()
-                                .w_px()
-                                .bg(self.theme.preview)
-                                .absolute()
-                                .top_0()
-                                .bottom_0()
-                                .left(rems(time.f32() / self.audio.playlist().time_signature.beats_per_measure as f32 * self.zoom.width.0) + self.pan.x)
-                        })
-                    }))
                     .children(self.audio.playlist().tracks().iter().enumerate().map(|(index, track)| {
                         div()
                             .relative()
@@ -366,10 +423,262 @@ impl Render for PlaylistView {
                                     .id(format!("track-{}", index + 1))
                                     .overflow_y_scroll()
                                     .child(format!("Track {}", index + 1))
-                                    .child(format!("Gain {:.02}", track.gain)),
+                                    .child(div().flex().gap_4().items_center().child("Gain").child(AdjustableInput {
+                                        value: track.gain,
+                                        theme: Arc::clone(&self.theme),
+                                        set: {
+                                            let view = cx.entity().downgrade();
+                                            Box::new(move |gain, cx| {
+                                                view.upgrade().unwrap().update(cx, move |view, _| {
+                                                    view.audio.update_playlist(|playlist| playlist.set_track_gain(index, gain));
+                                                });
+                                                cx.notify(view.entity_id());
+                                            })
+                                        },
+                                        scale: 0.01,
+                                        name: format!("Track {} gain", index + 1).into(),
+                                    }))
+                                    .pipe(deferred),
                             )
+                    }))
+                    .children(
+                        self.hovered_position
+                            .map(|hovered_position| div().w_px().bg(self.theme.playhead_hover).absolute().top_0().bottom_0().left(hovered_position.x)),
+                    )
+                    .child(div().w_px().bg(self.theme.playhead).absolute().top_0().bottom_0().left(playhead_x))
+                    .children(self.audio.playlist().preview.into_iter().flat_map(|preview| {
+                        let timing = preview.as_beats(tempo);
+                        [timing.start, timing.end].map(|time| {
+                            div()
+                                .w_px()
+                                .bg(self.theme.preview)
+                                .absolute()
+                                .top_0()
+                                .bottom_0()
+                                .left(rems(time.f32() / self.audio.playlist().time_signature.beats_per_measure as f32 * self.zoom.width.0) + self.pan.x)
+                        })
                     })),
             )
+    }
+}
+
+#[derive(IntoElement)]
+struct Navbar {
+    theme: Arc<ThemeColors>,
+    playlist: Entity<PlaylistView>,
+    app: Entity<Volt>,
+}
+
+impl RenderOnce for Navbar {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let playlist_view = self.playlist.read(cx);
+        div()
+            .flex()
+            .h_16()
+            .p_2()
+            .gap_2()
+            .flex_shrink_0()
+            .rounded_md()
+            .bg(linear_gradient(
+                0.,
+                linear_color_stop(self.theme.navbar_background_gradient_bottom, 0.),
+                linear_color_stop(self.theme.navbar_background_gradient_top, 1.),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .p_2()
+                    .gap_2()
+                    .items_center()
+                    .border_1()
+                    .border_color(self.theme.navbar_outline)
+                    .rounded_md()
+                    .bg(self.theme.navbar_widget)
+                    .child(img("navbar-icon").size_8())
+                    .child(div().w_px().bg(self.theme.navbar_outline).h_full())
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .items_center()
+                            .children(["File", "Edit", "View", "Help"].map(|name| div().child(name).py_1().px_2().rounded_md().id(name).hover(|style| style.bg(self.theme.hover)))),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_grow()
+                    .flex()
+                    .gap_4()
+                    .p_2()
+                    .border_1()
+                    .border_color(self.theme.navbar_outline)
+                    .rounded_md()
+                    .items_center()
+                    .bg(self.theme.navbar_widget)
+                    .child(img("play-icon").size_8().on_mouse_down(MouseButton::Left, {
+                        let playlist = self.playlist.clone();
+                        move |_, _, cx| {
+                            playlist.update(cx, |playlist, cx| {
+                                if playlist.audio.playing() {
+                                    playlist.audio.stop();
+                                } else {
+                                    playlist.audio.play();
+                                }
+                                cx.notify();
+                            });
+                        }
+                    }))
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .items_center()
+                            .child("BPM")
+                            .child(AdjustableInput {
+                                value: playlist_view.audio.playlist().tempo.bpm(),
+                                theme: Arc::clone(&self.theme),
+                                set: {
+                                    let playlist = self.playlist.downgrade();
+                                    Box::new(move |bpm, cx| {
+                                        playlist
+                                            .update(cx, |playlist, cx| {
+                                                playlist.audio.update_tempo(|_| Tempo::from_bpm(bpm));
+                                                cx.notify();
+                                            })
+                                            .unwrap();
+                                    })
+                                },
+                                scale: 0.1,
+                                name: "Tempo BPM".into(),
+                            })
+                            .id("bpm")
+                            .hoverable_tooltip({
+                                let playlist_view = self.playlist.clone();
+                                move |_, cx| {
+                                    let playlist_view = playlist_view.clone();
+                                    cx.new(move |_| Bpm {
+                                        playlist_view,
+                                        tap_times: [None; _],
+                                        tap_index: 0,
+                                    })
+                                    .into()
+                                }
+                            }),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .items_center()
+                            .child(AdjustableInput {
+                                value: playlist_view.audio.playlist().time_signature.beats_per_measure,
+                                theme: Arc::clone(&self.theme),
+                                set: Box::new({
+                                    let playlist = self.playlist.downgrade();
+                                    let app = self.app.downgrade();
+                                    move |beats_per_measure, cx| {
+                                        playlist
+                                            .update(cx, |playlist, cx| {
+                                                playlist.zoom.width = playlist.zoom.width / playlist.audio.update_beats_per_measure(|_| beats_per_measure.max(1)) as f32 *beats_per_measure as f32;
+                                                cx.notify();
+                                            })
+                                            .unwrap();
+                                        cx.notify(app.entity_id());
+                                    }
+                                }),
+                                scale: 0.01,
+                                name: "Beats per measure".into(),
+                            })
+                            .child("/")
+                            .child(AdjustableInput {
+                                value: playlist_view.audio.playlist().time_signature.beat_value,
+                                theme: Arc::clone(&self.theme),
+                                set: Box::new({
+                                    let playlist = self.playlist.downgrade();
+                                    let app = self.app.downgrade();
+                                    move |beat_value, cx| {
+                                        playlist
+                                            .update(cx, |playlist, cx| {
+                                                playlist.audio.update_beat_value(|_| beat_value.max(1));
+                                                cx.notify();
+                                            })
+                                            .unwrap();
+                                        cx.notify(app.entity_id());
+                                    }
+                                }),
+                                scale: 0.01,
+                                name: "Beat value".into(),
+                            }),
+                    ),
+            )
+    }
+}
+
+struct Bpm {
+    playlist_view: Entity<PlaylistView>,
+    tap_times: [Option<Instant>; 10],
+    tap_index: usize,
+}
+
+impl Render for Bpm {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let playlist = self.playlist_view.read(cx);
+        let theme = &playlist.theme;
+        div()
+            .flex_col()
+            .bg(theme.notification_background)
+            .text_color(theme.bg_text)
+            .items_center()
+            .gap_4()
+            .p_4()
+            .rounded_md()
+            .shadow_md()
+            .block_mouse_except_scroll()
+            .child(div().child("+").on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _, _, cx| {
+                    view.playlist_view.update(cx, |playlist, _| {
+                        playlist.audio.update_tempo(|tempo| Tempo::from_bpm(tempo.bpm() + 1.));
+                    });
+                    cx.notify();
+                }),
+            ))
+            .child(div().text_3xl().child(format!("{:.02}", playlist.audio.playlist().tempo.bpm())))
+            .child(div().child("-").on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _, _, cx| {
+                    view.playlist_view.update(cx, |playlist, _| {
+                        playlist.audio.update_tempo(|tempo| Tempo::from_bpm(tempo.bpm() - 1.));
+                    });
+                    cx.notify();
+                }),
+            ))
+            .child(div().child("Tap").on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _, _, cx| {
+                    view.tap_times[view.tap_index] = Some(Instant::now());
+                    view.tap_index = (view.tap_index + 1) % view.tap_times.len();
+                    let mut times = view.tap_times.iter().copied().flatten().collect_vec();
+                    let other = times.split_off(view.tap_index);
+                    if times.len() + other.len() < 2 {
+                        return;
+                    }
+                    view.playlist_view.update(cx, |playlist, _| {
+                        playlist.audio.update_tempo(|_| {
+                            Tempo::from_bpm(
+                                other
+                                    .into_iter()
+                                    .chain(times)
+                                    .tuple_windows()
+                                    .map(|(a, b)| 60. / (b - a).as_secs_f64())
+                                    .fold((0., 0.), |(sum, count), bpm| (sum + bpm, count + 1.))
+                                    .pipe(|(sum, count)| sum / count),
+                            )
+                        })
+                    });
+                    cx.notify();
+                }),
+            ))
     }
 }
 
@@ -397,176 +706,31 @@ impl Render for Volt {
             .text_color(self.theme.bg_text)
             .font_family("Inter")
             .on_action({
-                let playlist = self.playlist.downgrade();
+                let playlist = self.playlist.clone();
                 move |_: &TogglePlay, _, cx| {
-                    playlist
-                        .update(cx, |playlist, cx| {
-                            if playlist.audio.playing() {
-                                playlist.audio.stop();
-                            } else {
-                                playlist.audio.play();
-                            }
-                            cx.notify();
-                        })
-                        .unwrap();
+                    playlist.update(cx, |playlist, cx| {
+                        if playlist.audio.playing() {
+                            playlist.audio.stop();
+                        } else {
+                            playlist.audio.play();
+                        }
+                        cx.notify();
+                    });
                 }
+            })
+            .child(Navbar {
+                playlist: self.playlist.clone(),
+                theme: Arc::clone(&self.theme),
+                app: cx.entity(),
             })
             .child(
                 div()
+                    .flex_grow()
                     .flex()
-                    .h_16()
-                    .p_2()
-                    .gap_2()
-                    .flex_shrink_0()
-                    .rounded_md()
-                    .bg(linear_gradient(
-                        0.,
-                        linear_color_stop(self.theme.navbar_background_gradient_bottom, 0.),
-                        linear_color_stop(self.theme.navbar_background_gradient_top, 1.),
-                    ))
-                    .child(
-                        div()
-                            .flex()
-                            .p_2()
-                            .gap_2()
-                            .items_center()
-                            .border_1()
-                            .border_color(self.theme.navbar_outline)
-                            .rounded_md()
-                            .bg(self.theme.navbar_widget)
-                            .child(img("navbar-icon").size_8())
-                            .child(div().w_px().bg(self.theme.navbar_outline).h_full())
-                            .child(
-                                div()
-                                    .flex()
-                                    .gap_2()
-                                    .items_center()
-                                    .children(["File", "Edit", "View", "Help"].map(|name| div().child(name).py_1().px_2().rounded_md().id(name).hover(|style| style.bg(self.theme.hover)))),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .flex_grow()
-                            .flex()
-                            .p_2()
-                            .border_1()
-                            .border_color(self.theme.navbar_outline)
-                            .rounded_md()
-                            .items_center()
-                            .bg(self.theme.navbar_widget)
-                            .child(img("play-icon").size_8().on_mouse_down(
-                                MouseButton::Left,
-                                cx.listener(|app, _, _, cx| {
-                                    app.playlist.update(cx, |playlist, cx| {
-                                        if playlist.audio.playing() {
-                                            playlist.audio.stop();
-                                        } else {
-                                            playlist.audio.play();
-                                        }
-                                        cx.notify();
-                                    });
-                                }),
-                            ))
-                            .child({
-                                div().child(format!("BPM: {:.02}", self.playlist.read(cx).audio.playlist().tempo.bpm())).id("bpm").hoverable_tooltip({
-                                    let playlist = self.playlist.downgrade();
-                                    move |_, cx| {
-                                        const TAP_WINDOW: usize = 10;
-                                        struct Tooltip {
-                                            playlist_view: WeakEntity<PlaylistView>,
-                                            tap_times: [Option<Instant>; TAP_WINDOW],
-                                            tap_index: usize,
-                                        }
-                                        impl Render for Tooltip {
-                                            fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-                                                let playlist = self.playlist_view.upgrade().unwrap().read(cx);
-                                                let theme = &playlist.theme;
-                                                div()
-                                                    .flex_col()
-                                                    .bg(theme.notification_background)
-                                                    .text_color(theme.bg_text)
-                                                    .items_center()
-                                                    .gap_4()
-                                                    .p_4()
-                                                    .rounded_md()
-                                                    .shadow_md()
-                                                    .block_mouse_except_scroll()
-                                                    .child(div().child("+").on_mouse_down(
-                                                        MouseButton::Left,
-                                                        cx.listener(|tooltip, _, _, cx| {
-                                                            tooltip.playlist_view.upgrade().unwrap().update(cx, |playlist, _| {
-                                                                playlist.audio.update_tempo(|tempo| Tempo::from_bpm(tempo.bpm() + 1.));
-                                                            });
-                                                            cx.notify();
-                                                        }),
-                                                    ))
-                                                    .child(
-                                                        div()
-                                                            .text_3xl()
-                                                            .cursor_row_resize()
-                                                            .on_scroll_wheel(cx.listener(|tooltip, event: &gpui::ScrollWheelEvent, window, cx| {
-                                                                tooltip.playlist_view.upgrade().unwrap().update(cx, |playlist, _| {
-                                                                    let previous = playlist
-                                                                        .audio
-                                                                        .update_tempo(|tempo| Tempo::from_bpm(tempo.bpm() + event.delta.pixel_delta(window.rem_size()).y.to_f64()))
-                                                                        .bpm();
-                                                                    let (previous, next) = (previous, playlist.audio.playlist().tempo.bpm());
-                                                                    playlist.audio.seek(Time::Samples(Samples::new(playlist.audio.playhead().f64() * previous / next)));
-                                                                });
-                                                                cx.notify();
-                                                            }))
-                                                            .child(format!("{:.02}", playlist.audio.playlist().tempo.bpm())),
-                                                    )
-                                                    .child(div().child("-").on_mouse_down(
-                                                        MouseButton::Left,
-                                                        cx.listener(|tooltip, _, _, cx| {
-                                                            tooltip.playlist_view.upgrade().unwrap().update(cx, |playlist, _| {
-                                                                playlist.audio.update_tempo(|tempo| Tempo::from_bpm(tempo.bpm() - 1.));
-                                                            });
-                                                            cx.notify();
-                                                        }),
-                                                    ))
-                                                    .child(div().child("Tap").on_mouse_down(
-                                                        MouseButton::Left,
-                                                        cx.listener(|tooltip, _, _, cx| {
-                                                            tooltip.tap_times[tooltip.tap_index] = Some(Instant::now());
-                                                            tooltip.tap_index = (tooltip.tap_index + 1) % TAP_WINDOW;
-                                                            let mut times = tooltip.tap_times.iter().copied().flatten().collect_vec();
-                                                            let other = times.split_off(tooltip.tap_index);
-                                                            if times.len() + other.len() < 2 {
-                                                                return;
-                                                            }
-                                                            tooltip.playlist_view.upgrade().unwrap().update(cx, |playlist, _| {
-                                                                playlist.audio.update_tempo(|_| {
-                                                                    Tempo::from_bpm(
-                                                                        other
-                                                                            .into_iter()
-                                                                            .chain(times)
-                                                                            .tuple_windows()
-                                                                            .map(|(a, b)| 60. / (b - a).as_secs_f64())
-                                                                            .fold((0., 0.), |(sum, count), bpm| (sum + bpm, count + 1.))
-                                                                            .pipe(|(sum, count)| sum / count),
-                                                                    )
-                                                                })
-                                                            });
-                                                            cx.notify();
-                                                        }),
-                                                    ))
-                                            }
-                                        }
-                                        let playlist = playlist.clone();
-                                        cx.new(move |_| Tooltip {
-                                            playlist_view: playlist,
-                                            tap_times: [None; TAP_WINDOW],
-                                            tap_index: 0,
-                                        })
-                                        .into()
-                                    }
-                                })
-                            }),
-                    ),
+                    .child(div().child("Browser").w_1_4())
+                    .child(div().w_px().bg(self.theme.browser_outline))
+                    .child(self.playlist.clone()),
             )
-            .child(self.playlist.clone())
             .child(
                 div()
                     .flex()

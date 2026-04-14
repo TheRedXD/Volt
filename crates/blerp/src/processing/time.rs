@@ -65,12 +65,12 @@ impl Beats {
 #[derive(Debug, Clone, Copy)]
 pub struct TimeSignature {
     pub beats_per_measure: u32,
-    pub beat_unit: u32,
+    pub beat_value: u32,
 }
 
 impl Default for TimeSignature {
     fn default() -> Self {
-        Self { beats_per_measure: 4, beat_unit: 4 }
+        Self { beats_per_measure: 4, beat_value: 4 }
     }
 }
 

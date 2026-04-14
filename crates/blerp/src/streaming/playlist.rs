@@ -30,7 +30,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Playlist {
-    tracks: Arc<Vec<Track>>,
+    tracks: Vec<Track>,
     pub time_signature: TimeSignature,
     pub tempo: Tempo,
     pub preview: Option<ClipTiming>,
@@ -222,22 +222,30 @@ impl PlaylistAudio {
         &self.playlist
     }
 
-    fn send_update(&self) {
+    pub fn update_playlist(&mut self, update: impl FnOnce(&mut Playlist)) {
+        update(&mut self.playlist);
         if let Some(out) = &self.out {
             out.audio_engine_tx.send(AudioEngineMessage::Update(self.playlist.clone())).unwrap();
         }
-    }
-
-     fn set_tempo(&mut self, tempo: Tempo) {
-        self.playlist.tempo = tempo;
-        self.send_update();
     }
 
     /// Update the tempo of the playlist and return the previous tempo.
     /// `update` receives the current tempo and should return the new tempo.
     pub fn update_tempo(&mut self, update: impl FnOnce(Tempo) -> Tempo) -> Tempo {
         let old = self.playlist.tempo;
-        self.set_tempo(update(self.playlist.tempo));
+        self.update_playlist(|playlist| playlist.tempo = update(playlist.tempo));
+        old
+    }
+
+    pub fn update_beats_per_measure(&mut self, update: impl FnOnce(u32) -> u32) -> u32 {
+        let old = self.playlist.time_signature.beats_per_measure;
+        self.update_playlist(|playlist| playlist.time_signature.beats_per_measure = update(playlist.time_signature.beats_per_measure));
+        old
+    }
+
+    pub fn update_beat_value(&mut self, update: impl FnOnce(u32) -> u32) -> u32 {
+        let old = self.playlist.time_signature.beat_value;
+        self.update_playlist(|playlist| playlist.time_signature.beat_value = update(playlist.time_signature.beat_value));
         old
     }
 }
@@ -257,7 +265,7 @@ impl Playlist {
                         .into_boxed_slice(),
                 );
 
-                Arc::new(vec![
+                vec![
                     Track {
                         clips: vec![
                             Clip {
@@ -290,7 +298,7 @@ impl Playlist {
                         }],
                         gain: 1.,
                     },
-                ])
+                ]
             },
             time_signature: TimeSignature::default(),
             tempo: Tempo::default(),
@@ -300,6 +308,10 @@ impl Playlist {
                 offset: Beats(0.),
             })),
         }
+    }
+
+    pub fn set_track_gain(&mut self, index: usize, gain: f32) {
+        self.tracks[index].gain = gain;
     }
 
     #[must_use]
