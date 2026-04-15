@@ -1,13 +1,11 @@
 use std::{
     cmp,
     f64::consts::TAU,
-    fmt::Debug,
-    ops::Range,
     sync::{
-        Arc, Mutex,
+        Arc,
         atomic::{self, AtomicU64},
     },
-    thread::{JoinHandle, park, sleep, spawn},
+    thread::{JoinHandle, sleep, spawn},
     time::Duration,
 };
 

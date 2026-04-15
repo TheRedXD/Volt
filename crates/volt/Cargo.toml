@@ -28,8 +28,7 @@ strsim = "0.11.1"
 unhygienic2 = "0.1.0"
 gpui = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
-core-foundation = "=0.10.0"
-core-graphics = "0.25"
+sum_tree = { git = "https://github.com/zed-industries/zed" }
 
 # TEMPORARY FIX: Fix some platform support
 [target.'cfg(target_os = "linux")'.dependencies]
