@@ -17,7 +17,9 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    App, AssetSource, Bounds, Context, Div, DivFrameState, ElementId, Entity, FocusHandle, Hitbox, KeyBinding, LayoutId, List, MouseButton, PathBuilder, Pixels, Point, Rems, Rgba, SharedString, Size, Stateful, Style, StyleRefinement, WeakEntity, Window, WindowBounds, WindowOptions, actions, canvas, deferred, div, hsla, img, linear_color_stop, linear_gradient, pattern_slash, point, prelude::*, px, rems, rgb, rgba, size
+    AnyDrag, AnyView, App, AssetSource, Bounds, Context, DefiniteLength, Div, DivFrameState, ElementId, Empty, Entity, FocusHandle, Global, Hitbox, KeyBinding, LayoutId, List, MouseButton,
+    PathBuilder, Pixels, Point, Rems, Rgba, SharedString, Size, Stateful, Style, StyleRefinement, Styled, WeakEntity, Window, WindowBounds, WindowOptions, actions, canvas, deferred, div, hsla, img,
+    linear_color_stop, linear_gradient, pattern_slash, point, prelude::*, px, rems, rgb, rgba, size,
 };
 use gpui_platform::application;
 use itertools::Itertools;
@@ -152,7 +154,8 @@ impl RenderOnce for Navbar {
                                     move |beats_per_measure, cx| {
                                         playlist
                                             .update(cx, |playlist, cx| {
-                                                playlist.zoom.width = playlist.zoom.width / playlist.audio.update_beats_per_measure(|_| beats_per_measure.max(1)) as f32 * beats_per_measure as f32;
+                                                let beats_per_measure = beats_per_measure.max(1);
+                                                playlist.zoom.width = playlist.zoom.width / playlist.audio.update_beats_per_measure(|_| beats_per_measure) as f32 * beats_per_measure as f32;
                                                 cx.notify();
                                             })
                                             .unwrap();
@@ -255,9 +258,18 @@ impl Render for Bpm {
     }
 }
 
+struct Drag(Option<DragInner>);
+struct DragInner {
+    start: Point<Pixels>,
+    item: AnyDrag,
+}
+
+impl Global for Drag {}
+
 struct Volt {
     browser: Entity<BrowserView>,
     playlist: Entity<PlaylistView>,
+    browser_size: f32,
     theme: Arc<ThemeColors>,
 }
 
@@ -266,13 +278,14 @@ impl Volt {
         Self {
             browser: cx.new(|_| BrowserView::new(Arc::clone(&theme))),
             playlist: cx.new(|_| PlaylistView::new(Arc::clone(&theme))),
+            browser_size: 0.3,
             theme,
         }
     }
 }
 
 impl Render for Volt {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex()
             .flex_col()
@@ -303,8 +316,24 @@ impl Render for Volt {
                     .flex_grow()
                     .flex()
                     .min_h_0()
-                    .child(self.browser.clone())
-                    .child(div().w_px().bg(self.theme.browser_outline))
+                    .child(div().flex().flex_col().w(DefiniteLength::Fraction(self.browser_size)).child(self.browser.clone()))
+                    .child({
+                        struct Payload(Point<Pixels>, f32);
+                        div()
+                            .w_8()
+                            .px_3()
+                            .cursor_col_resize()
+                            .mx_neg_3()
+                            .flex()
+                            .flex_col()
+                            .child(div().flex_grow().bg(self.theme.browser_outline))
+                            .id("separator")
+                            .on_drag(Payload(window.mouse_position(), self.browser_size), |_, _, _, cx| cx.new(|_| Empty))
+                            .on_drag_move(cx.listener(|app, event: &gpui::DragMoveEvent<Payload>, window, cx| {
+                                app.browser_size = (event.drag(cx).1 + ((event.event.position - event.drag(cx).0).x) / window.bounds().size.width).clamp(0.1, 0.9);
+                            }))
+                            .pipe(deferred)
+                    })
                     .child(self.playlist.clone()),
             )
             .child(
@@ -351,6 +380,7 @@ fn main() {
             ])
             .unwrap();
         cx.bind_keys([KeyBinding::new("space", TogglePlay, None)]);
+        cx.set_global(Drag(None));
         let bounds = Bounds::centered(None, size(px(500.), px(500.0)), cx);
         cx.open_window(
             WindowOptions {
