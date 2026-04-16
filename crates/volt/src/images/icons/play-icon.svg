@@ -1,3 +1,40 @@
-<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M5 11.1384V4.86159C5 4.47768 5.41474 4.23699 5.74807 4.42747L11.2403 7.56588C11.5762 7.75783 11.5762 8.24217 11.2403 8.43412L5.74807 11.5725C5.41474 11.763 5 11.5223 5 11.1384Z" fill="white"/>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="16"
+   height="16"
+   viewBox="0 0 16 16"
+   fill="none"
+   version="1.1"
+   id="svg1"
+   sodipodi:docname="play-icon.svg"
+   inkscape:version="1.4.2 (ebf0e940d0, 2025-05-08)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="45.254834"
+     inkscape:cx="4.3862717"
+     inkscape:cy="9.6122328"
+     inkscape:window-width="2560"
+     inkscape:window-height="1380"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
+  <path
+     d="M 1.1101044,14.899233 V 1.100769 c 0,-0.84395867 0.9117331,-1.37307336 1.6445005,-0.95433653 L 14.828308,7.0456754 c 0.738417,0.4219684 0.738417,1.4867049 0,1.9086732 L 2.7546049,15.853526 C 2.0218375,16.272306 1.1101044,15.743169 1.1101044,14.899233 Z"
+     fill="white"
+     id="path1"
+     style="fill:#ffffff;fill-opacity:1;stroke-width:2.19833" />
 </svg>

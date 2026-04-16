@@ -1,8 +1,7 @@
 #![warn(clippy::pedantic, clippy::nursery, clippy::allow_attributes_without_reason, clippy::undocumented_unsafe_blocks, clippy::clone_on_ref_ptr)]
 use eframe::{App, CreationContext, NativeOptions, egui, run_native};
 use egui::{
-    Align2, Area, CentralPanel, Context, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, IconData, Modifiers, Popup, SidePanel, Stroke, TextStyle, TopBottomPanel, Vec2, ViewportBuilder,
-    hex_color,
+    Align2, Area, CentralPanel, Color32, Context, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, Frame, IconData, Label, Modifiers, Popup, RichText, SidePanel, Stroke, TextStyle, TopBottomPanel, Vec2, ViewportBuilder, hex_color
 };
 use egui_extras::install_image_loaders;
 use human_panic::setup_panic;
@@ -11,7 +10,7 @@ use info::handle_args;
 use std::{
     io::{BufReader, Cursor},
     rc::Rc,
-    sync::mpsc::{Sender, channel},
+    sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc::{Sender, channel}},
     time::Instant,
 };
 use tap::{Pipe, Tap};
@@ -23,7 +22,7 @@ use visual::{
     status::status,
 };
 
-use crate::visual::{dialog::dialog, theme::ThemeColors};
+use crate::visual::{dialog::dialog, icons::macros::get_icon_image, popups::{about::render_about, settings::render_settings}, theme::ThemeColors};
 use crate::visual::notification::Notification;
 use crate::visual::palette::Palette;
 use volt_waveform;
@@ -34,34 +33,76 @@ mod shortcuts;
 mod timings;
 mod visual;
 
+pub struct AppSignals {
+    should_restart: AtomicBool,
+    use_glow: AtomicBool,
+    greeter: AtomicBool,
+}
+
+fn load_icon() -> egui::IconData {
+    let (icon_rgba, icon_width, icon_height) = {
+        let image = image::load_from_memory(include_bytes!("./images/icons/app-icon.png"))
+            .expect("Failed to open icon path")
+            .into_rgba8();
+        
+        let (width, height) = image.dimensions();
+        let rgba = image.into_raw();
+        (rgba, width, height)
+    };
+
+    egui::IconData {
+        rgba: icon_rgba,
+        width: icon_width,
+        height: icon_height,
+    }
+}
+
 fn main() -> eframe::Result {
     setup_panic!();
     if handle_args().is_break() {
         return Ok(());
     }
-    run_native(
-        "Volt",
-        NativeOptions {
+    
+    let app_signals = Arc::new(AppSignals {
+        should_restart: AtomicBool::new(false),
+        use_glow: AtomicBool::new(false),
+        greeter: AtomicBool::new(true),
+    });
+    
+    loop {
+        app_signals.should_restart.store(false, Ordering::SeqCst);
+        
+        let native_options = NativeOptions {
             vsync: true,
+            renderer: match app_signals.use_glow.load(Ordering::SeqCst) {
+                true => eframe::Renderer::Glow,
+                false => eframe::Renderer::Wgpu,
+            },
             wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
                 present_mode: eframe::wgpu::PresentMode::Immediate,
                 ..Default::default()
             },
-            viewport: ViewportBuilder::default().with_drag_and_drop(true).with_icon(
-                ImageReader::new(BufReader::new(Cursor::new(include_bytes!("images/icons/icon.png").as_ref())))
-                    .tap_mut(|reader| reader.set_format(ImageFormat::Png))
-                    .decode()
-                    .unwrap()
-                    .pipe(|image| IconData {
-                        rgba: image.to_rgb8().into_raw(),
-                        height: image.height(),
-                        width: image.width(),
-                    }),
-            ),
+            viewport: ViewportBuilder::default()
+                .with_drag_and_drop(true)
+                .with_app_id("sh.thered.Volt")
+                .with_icon(load_icon()),
             ..Default::default()
-        },
-        Box::new(|cc| Ok(Box::new(VoltApp::new(cc)))),
-    )
+        };
+        
+        let result = run_native(
+            "Volt",
+            native_options,
+            Box::new(|cc| Ok(Box::new(VoltApp::new(cc, app_signals.clone())))),
+        );
+        
+        if app_signals.should_restart.load(Ordering::SeqCst) {
+            // TODO: replace with proper log
+            println!("Restarting app...");
+            continue;
+        }
+        
+        return result;
+    }
 }
 
 struct VoltApp {
@@ -71,10 +112,11 @@ struct VoltApp {
     pub theme: Rc<ThemeColors>,
     pub palette: Palette,
     pub notifications_tx: Sender<Notification>,
+    pub app_signals: Arc<AppSignals>,
 }
 
 impl VoltApp {
-    fn new(cc: &CreationContext<'_>) -> Self {
+    fn new(cc: &CreationContext<'_>, app_signals: Arc<AppSignals>) -> Self {
         const MONO_FONT_NAME: &str = "IBMPlexMono";
         const PROP_FONT_NAME: &str = "Inter";
         install_image_loaders(&cc.egui_ctx);
@@ -107,19 +149,20 @@ impl VoltApp {
             style.visuals.interact_cursor = Some(CursorIcon::PointingHand);
             style.visuals.widgets.inactive.bg_stroke = Stroke::new(1., theme.playlist_bar);
             style.visuals.widgets.inactive.weak_bg_fill = theme.command_palette;
-            style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, hex_color!("#353248"));
+            style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, theme.playlist_bar);
         });
         let theme = Rc::new(ThemeColors::default());
         Popup::open_id(&cc.egui_ctx, "welcome".into());
         let (tx, rx) = channel();
-        
+
         Self {
             browser: Browser::new(Rc::clone(&theme)),
-            central: Central::new(),
+            central: Central::new(Rc::clone(&theme)),
             notification_drawer: NotificationDrawer::new(rx, Rc::clone(&theme)),
             palette: Palette::new(Rc::clone(&theme)),
             theme,
             notifications_tx: tx,
+            app_signals: app_signals,
         }
     }
 }
@@ -127,6 +170,29 @@ impl VoltApp {
 impl App for VoltApp {
     #[allow(clippy::too_many_lines, reason = "shut")]
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
+        if ctx.input(|i| i.viewport().minimized.unwrap_or(false)) {
+            return;
+        }
+        
+        // if self.app_signals.greeter.load(Ordering::SeqCst) {
+        //     CentralPanel::default().frame(egui::Frame::default().fill(self.theme.central_background)).show(ctx, |ui| {
+        //         ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::LeftToRight), |ui| {
+        //             ui.horizontal(|ui| {
+        //                 ui.add(
+        //                     get_icon_image!("navbar-icon.svg")
+        //                         .fit_to_exact_size(Vec2::new(128., 128.))
+        //                 );
+        //                 ui.vertical(|ui| {
+        //                     ui.label("testing");
+        //                     ui.label("testing");
+        //                     ui.label("testing");
+        //                 });
+        //             });
+        //         })
+        //     });
+        //     return;
+        // }
+        
         let time_render_start = Instant::now();
         dialog(ctx, &self.theme, |ui| {
             ui.label("Welcome to Volt!");
@@ -143,16 +209,22 @@ impl App for VoltApp {
                 }
             });
         });
+        
+        render_about(ctx, &self.theme);
+        render_settings(ctx, &self.theme);
+        
         TopBottomPanel::top("navbar").frame(egui::Frame::default()).show_separator_line(false).show(ctx, |ui| {
-            ui.add(navbar(&self.theme));
+            ui.add(navbar(&self.theme, &mut self.central));
         });
-        TopBottomPanel::bottom("status").frame(egui::Frame::default()).show(ctx, |ui| {
+        TopBottomPanel::bottom("status").frame(egui::Frame::default()).show_separator_line(false).show(ctx, |ui| {
             ui.add(status(&self.theme, &mut self.central.mode));
         });
 
         let browser_id = egui::Id::new("browser");
         if ctx.memory_mut(|mem| *mem.data.get_temp_mut_or(browser_id, true)) {
+            let min_width = *self.browser.min_width.read().unwrap();
             SidePanel::left(browser_id)
+                .min_width(min_width)
                 .default_width(300.)
                 .frame(egui::Frame::default().fill(self.theme.browser))
                 .show_separator_line(true)
@@ -196,6 +268,31 @@ impl App for VoltApp {
 
         if ctx.memory_mut(|mem| *mem.data.get_temp_mut_or_default("timings".into())) {
             timings::show_timings(ctx, "Timings");
+        }
+        
+        if self.app_signals.should_restart.load(Ordering::SeqCst) {
+            Area::new("restart_overlay".into())
+                .fixed_pos(ctx.screen_rect().left_top())
+                .order(egui::Order::Foreground)
+                .interactable(false)
+                .show(ctx, |ui| {
+                    let screen_rect = ctx.screen_rect();
+                    ui.painter().rect_filled(screen_rect, 0.0, egui::Color32::from_black_alpha(180));
+
+                    let text = "Restarting...";
+                    let font_id = FontId::new(24.0, FontFamily::Proportional);
+                    let text_color = egui::Color32::WHITE;
+                    ui.painter().text(
+                        screen_rect.center(),
+                        Align2::CENTER_CENTER,
+                        text,
+                        font_id,
+                        text_color,
+                    );
+
+                    ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                });
         }
     }
 

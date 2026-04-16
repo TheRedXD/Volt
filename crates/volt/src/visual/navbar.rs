@@ -1,8 +1,12 @@
 use eframe::egui;
-use egui::{Color32, FontId, Image, Sense, Stroke, TextureOptions, Ui, Vec2, Widget, containers::menu::MenuButton, hex_color, include_image};
+use egui::{Color32, FontId, Frame, Image, Label, Sense, Stroke, TextureOptions, Ui, Vec2, Widget, containers::menu::MenuButton, hex_color, include_image};
 use tap::Tap;
 
+use crate::visual::{central::Central, dialog::dialog, popups::{about::show_about, settings::show_settings}};
+
 use super::theme::ThemeColors;
+
+use egui::{CursorIcon, RectAlign, Align2, CornerRadius, Popup, PopupAnchor, LayerId, Margin};
 
 pub fn navbar_menu_buttons(ui: &mut Ui, theme: &ThemeColors) -> egui::Response {
     egui::Frame::new()
@@ -74,6 +78,9 @@ pub fn navbar_menu_buttons(ui: &mut Ui, theme: &ThemeColors) -> egui::Response {
                         "Paste" => {
                             todo!();
                         },
+                        "Settings" => {
+                            show_settings(ui);
+                        },
                     ],
                     "View" => [
                         "Zoom In" => {
@@ -87,11 +94,12 @@ pub fn navbar_menu_buttons(ui: &mut Ui, theme: &ThemeColors) -> egui::Response {
                         },
                     ],
                     "Help" => [
-                        "Documentation" => {
-                            todo!();
-                        },
+                        // TODO: Add documentation eventually (this will probably take a while)
+                        // "Documentation" => {
+                        //     todo!();
+                        // },
                         "About" => {
-                            todo!();
+                            show_about(ui);
                         },
                     ],
                 ];
@@ -100,60 +108,74 @@ pub fn navbar_menu_buttons(ui: &mut Ui, theme: &ThemeColors) -> egui::Response {
         .response
 }
 
-pub fn navbar(theme: &ThemeColors) -> impl Widget + use<'_> {
+// TODO: Figure out a more sane way to draw the navbar
+pub fn navbar<'a>(theme: &'a ThemeColors, central: &'a mut Central) -> impl Widget + use<'a> {
     |ui: &mut Ui| {
+        let mut navbar_area = ui.available_rect_before_wrap();
+        let navbar_height = 40.0; 
+        navbar_area.set_height(navbar_height);
+
         let navbar_texture_image = super::build_gradient(40, theme.navbar_background_gradient_top, theme.navbar_background_gradient_bottom);
         let navbar_texture = ui.ctx().load_texture("navbar_texture", navbar_texture_image, TextureOptions::default());
-
         ui.painter().image(
             navbar_texture.id(),
-            ui.available_rect_before_wrap(),
+            navbar_area,
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
-        ui.horizontal(|ui| {
-            egui::Frame::default().show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    egui::Frame::new().show(ui, |ui| {
-                        ui.style_mut().spacing.item_spacing = Vec2::ZERO;
-                        egui::Frame::new()
-                            .outer_margin(egui::Margin::same(5))
-                            .inner_margin(egui::Margin::same(5))
-                            .stroke(Stroke::new(1., hex_color!("#35324840")))
-                            .corner_radius(egui::CornerRadius::same(5))
-                            .fill(theme.navbar_widget)
-                            .show(ui, |ui| {
-                                egui::Frame::new().inner_margin(egui::Margin::symmetric(5, -6)).show(ui, |ui| {
-                                    ui.add(Image::new(include_image!("../images/icons/navbar-icon.svg")).fit_to_exact_size(Vec2::splat(30.)));
-                                });
-                                ui.vertical(|ui| {
-                                    ui.add_space(2.0);
-                                    ui.add(egui::Separator::default().vertical().grow(7.).spacing(16.));
-                                });
-                                navbar_menu_buttons(ui, theme);
-                                ui.add_space(8.0);
-                            });
-                        ui.centered_and_justified(|ui| {
-                            egui::Frame::new().show(ui, |ui| {
-                                egui::Frame::new()
-                                    .outer_margin(egui::Margin::symmetric(2, 5))
-                                    .inner_margin(egui::Margin::same(5))
-                                    .stroke(Stroke::new(1., hex_color!("#35324840")))
-                                    .corner_radius(egui::CornerRadius::same(5))
-                                    .fill(theme.navbar_widget)
-                                    .show(ui, |ui| {
-                                        ui.add(
-                                            Image::new(include_image!("../images/icons/play-icon.svg"))
-                                                .tint(egui::Color32::GREEN)
-                                                .fit_to_exact_size(Vec2::splat(16.)),
-                                        );
-                                    });
-                            });
+
+        ui.allocate_ui_at_rect(navbar_area, |ui| {
+            ui.horizontal(|ui| {
+                ui.style_mut().spacing.item_spacing = Vec2::ZERO;
+
+                egui::Frame::new()
+                    .outer_margin(egui::Margin::same(5))
+                    .inner_margin(egui::Margin::same(5))
+                    .corner_radius(egui::CornerRadius::same(5))
+                    .show(ui, |ui| {
+                        egui::Frame::new().inner_margin(egui::Margin::symmetric(5, -6)).show(ui, |ui| {
+                            ui.add(Image::new(include_image!("../images/icons/navbar-icon.svg")).fit_to_exact_size(Vec2::splat(30.)));
                         });
+                        ui.vertical(|ui| {
+                            ui.add_space(2.0);
+                            ui.style_mut().visuals.widgets.noninteractive.bg_stroke.color = theme.navbar_element_border;
+                            ui.add(egui::Separator::default().vertical().grow(7.).spacing(16.));
+                        });
+                        navbar_menu_buttons(ui, theme);
+                        ui.add_space(8.0);
                     });
-                })
-            })
-        })
-        .response
+            });
+        });
+        
+        let transport_icons_container_width = 130.0;
+        let transport_icons_height = 32.0;
+
+        let center_x = (navbar_area.width() / 2.0) - (transport_icons_container_width / 2.0);
+        let transport_rect_min = egui::pos2(
+            navbar_area.min.x + center_x,
+            navbar_area.min.y
+        );
+        let transport_rect_max = egui::pos2(
+            transport_rect_min.x + transport_icons_container_width,
+            navbar_area.min.y + transport_icons_height
+        );
+        let transport_rect = egui::Rect::from_min_max(transport_rect_min, transport_rect_max);
+
+        ui.allocate_ui_at_rect(transport_rect, |ui| {
+            ui.centered_and_justified(|ui| {
+                ui.horizontal(|ui| {
+                    ui.style_mut().spacing.item_spacing = Vec2::new(8.0, 0.0);
+                    ui.add(Image::new(include_image!("../images/icons/loop-icon.svg")).tint(hex_color!("#888888")).fit_to_exact_size(Vec2::splat(16.)));
+                    ui.add_space(4.);
+                    ui.add(Image::new(include_image!("../images/icons/play-icon.svg")).tint(hex_color!("#8cdd8c")).fit_to_exact_size(Vec2::splat(16.)));
+                    ui.add(Image::new(include_image!("../images/icons/stop-icon.svg")).tint(egui::Color32::WHITE).fit_to_exact_size(Vec2::splat(16.)));
+                    ui.add(Image::new(include_image!("../images/icons/record-icon.svg")).tint(egui::Color32::WHITE).fit_to_exact_size(Vec2::splat(16.)));
+                    ui.add_space(4.);
+                    ui.add(Image::new(include_image!("../images/icons/playback-metronome-empty.svg")).tint(egui::Color32::WHITE).fit_to_exact_size(Vec2::new(20., 12.)));
+                });
+            });
+        });
+
+        ui.allocate_rect(navbar_area, Sense::hover())
     }
 }

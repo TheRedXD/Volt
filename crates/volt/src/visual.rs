@@ -12,11 +12,13 @@ pub mod palette;
 pub mod status;
 pub mod switch;
 pub mod theme;
+pub mod icons;
+pub mod popups;
 
 impl Default for theme::ThemeColors {
     #[allow(clippy::cognitive_complexity, reason = "it is just colors")]
     fn default() -> Self {
-        builtin_themes::DEFAULT
+        builtin_themes::GRAY
     }
 }
 
