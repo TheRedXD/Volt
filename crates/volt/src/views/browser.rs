@@ -21,14 +21,14 @@ use tap::{Pipe, Tap};
 use crate::{Drag, DragInner, FILE_AUDIO_ICON, FILE_OTHER_ICON, theme::ThemeColors};
 
 #[derive(Clone, PartialEq, Eq)]
-struct Entry {
-    path: Arc<Path>,
+pub struct Entry {
+    pub path: Arc<Path>,
     depth: usize,
     data: EntryData,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum EntryData {
+pub enum EntryData {
     File,
     Directory { open: bool },
 }
@@ -42,7 +42,7 @@ impl Item for Entry {
 }
 
 #[derive(Clone, Copy)]
-struct EntrySummary {
+pub struct EntrySummary {
     count: usize,
 }
 
@@ -114,7 +114,7 @@ enum Category {
 }
 
 #[derive(Clone)]
-struct EntryDragPayload(Entry);
+pub struct EntryDragPayload(pub Entry);
 
 struct EntryDrag {
     payload: EntryDragPayload,

@@ -8,10 +8,7 @@ use std::{
     time::Instant,
 };
 
-use blerp::{
-    processing::time::{Beats, Samples, Tempo, Time},
-    streaming::playlist::{Playlist, PlaylistAudio},
-};
+use blerp::{Beats, Playlist, PlaylistAudio, Samples, Tempo, Time};
 use cpal::{
     default_host,
     traits::{DeviceTrait, HostTrait},

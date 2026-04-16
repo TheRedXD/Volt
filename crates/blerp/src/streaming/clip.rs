@@ -1,17 +1,69 @@
-use std::{range::Range, sync::Arc};
+use std::{fs::File, io, path::Path, range::Range, sync::Arc};
 
 use itertools::{Itertools, MinMaxResult};
+use symphonia::{
+    core::{
+        audio::Signal,
+        codecs::{Decoder, DecoderOptions},
+        errors::Error as SymphoniaError,
+        formats::{SeekMode, SeekTo},
+        units::Time as SymphoniaTime,
+    },
+    default::get_codecs,
+};
 
-use crate::processing::time::{Beats, Samples, Tempo, Time};
+use crate::{
+    SAMPLE_RATE,
+    processing::time::{Beats, Samples, Tempo, Time},
+    read::Reader,
+};
 
 #[derive(Clone)]
 pub enum ClipData {
     Audio(AudioClipData),
+    Symphonia(SymphoniaClipData),
 }
 
 #[derive(Clone)]
 pub struct AudioClipData {
     pub(crate) data: Arc<[f32]>,
+}
+
+pub struct SymphoniaClipData {
+    pub(crate) path: Arc<Path>,
+    pub(crate) track: usize,
+    pub(crate) reader: Reader,
+    pub(crate) decoder: Box<dyn Decoder>,
+}
+
+impl Clone for SymphoniaClipData {
+    fn clone(&self) -> Self {
+        let reader = Reader::new(File::open(&self.path).unwrap()).unwrap();
+        Self {
+            path: Arc::clone(&self.path),
+            track: self.track,
+            decoder: get_codecs().make(&reader.format_reader.tracks()[self.track].codec_params, &DecoderOptions::default()).unwrap(),
+            reader,
+        }
+    }
+}
+
+impl SymphoniaClipData {
+    pub fn from_path(path: Arc<Path>) -> impl ExactSizeIterator<Item = Self> {
+        let reader = {
+            let path = Arc::clone(&path);
+            move || Reader::new(File::open(&path).unwrap()).unwrap()
+        };
+        (0..reader().format_reader.tracks().len()).map(move |index| {
+            let reader = reader();
+            Self {
+                path: Arc::clone(&path),
+                track: index,
+                decoder: get_codecs().make(&reader.format_reader.tracks()[index].codec_params, &DecoderOptions::default()).unwrap(),
+                reader,
+            }
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -24,32 +76,58 @@ impl Clip {
     pub fn data_len(&self) -> Time {
         match &self.data {
             ClipData::Audio(AudioClipData { data }) => Time::Samples(Samples(data.len() as f64)),
+            ClipData::Symphonia(SymphoniaClipData { decoder, .. }) => Time::Samples(Samples(decoder.codec_params().n_frames.unwrap() as f64)),
         }
     }
 
-    pub fn sample(&self, time: Time, tempo: Tempo) -> f32 {
-        match &self.data {
-            ClipData::Audio(AudioClipData { data }) => {
-                let samples = time.samples(tempo).u64();
-                if samples < data.len() as u64 {
-                    data[(samples - self.timing.as_samples(tempo).offset.u64()) as usize]
-                } else {
-                    0.
+    pub fn base_minmax_mipmap(&mut self, tempo: Tempo, samples_per_chunk: usize) -> Vec<Range<f32>> {
+        let chunks = self.data_len().samples(tempo).usize() / samples_per_chunk;
+        let from_minmax = |minmax, default| {
+            Range::from(match minmax {
+                MinMaxResult::NoElements => default..default,
+                MinMaxResult::OneElement(sample) => sample..sample,
+                MinMaxResult::MinMax(min, max) => min..max,
+            })
+        };
+        let from_samples = |data: &[f32]| {
+            (0..chunks)
+                .map(|x| {
+                    let x = x as f64;
+                    let start = x * samples_per_chunk as f64;
+                    let end = start + samples_per_chunk as f64;
+                    let range = Range::from((start as usize).min(data.len() - 1)..(end as usize).min(data.len() - 1));
+                    from_minmax(data[range].iter().copied().minmax(), data[range.start])
+                })
+                .collect()
+        };
+        match &mut self.data {
+            ClipData::Audio(AudioClipData { data }) => from_samples(data),
+            ClipData::Symphonia(SymphoniaClipData { track, reader, decoder, .. }) => {
+                reader
+                    .format_reader
+                    .seek(
+                        SeekMode::Accurate,
+                        SeekTo::TimeStamp {
+                            ts: 0,
+                            track_id: reader.format_reader.tracks()[*track].id,
+                        },
+                    )
+                    .unwrap();
+                let mut data = Vec::<f32>::with_capacity(decoder.codec_params().n_frames.unwrap() as usize);
+                loop {
+                    let packet = match reader.format_reader.next_packet() {
+                        Ok(packet) => packet,
+                        Err(SymphoniaError::IoError(error)) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+                        Err(error) => {
+                            panic!("{}", error);
+                        }
+                    };
+                    let source = decoder.decode(&packet).unwrap();
+                    let mut destination = source.make_equivalent::<f32>();
+                    source.convert(&mut destination);
+                    data.extend(destination.chan(0).iter().copied());
                 }
-            }
-        }
-    }
-
-    pub fn sample_range(&self, range: Range<Time>, tempo: Tempo) -> Range<f32> {
-        match &self.data {
-            ClipData::Audio(AudioClipData { data }) => {
-                let range = Range::from(range.start.samples(tempo).usize().min(data.len())..range.end.samples(tempo).usize().min(data.len()));
-                match data[range].iter().minmax() {
-                    MinMaxResult::NoElements => data[range.start]..data[range.start],
-                    MinMaxResult::OneElement(sample) => *sample..*sample,
-                    MinMaxResult::MinMax(min, max) => *min..*max,
-                }
-                .into()
+                from_samples(&data)
             }
         }
     }

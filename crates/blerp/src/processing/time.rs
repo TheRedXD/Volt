@@ -133,6 +133,7 @@ impl AddAssign for Samples {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum Time {
     Beats(Beats),
     Samples(Samples),
