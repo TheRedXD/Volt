@@ -66,3 +66,38 @@ pub fn default() -> ThemeColors {
         hover: rgba(0xffffff20),
     }
 }
+
+#[expect(clippy::unreadable_literal, reason = "these are hex codes")]
+pub fn gray() -> ThemeColors {
+    ThemeColors {
+        accent: rgb(0xa0a0a0),
+        navbar_background_gradient_top: rgb(0x1f1f1f),
+        navbar_background_gradient_bottom: rgb(0x171717),
+        navbar_outline: rgb(0x3f3f3f),
+        navbar_widget: rgba(0x08080820),
+        notification_background: rgb(0x1c1c1c),
+        notification_border: rgb(0x3c3c3c),
+        central_background: rgb(0x171717),
+        browser: rgb(0x171717),
+        browser_outline: rgb(0x282828),
+        browser_selected_button_fg: rgb(0xd0d0d0),
+        browser_unselected_button_fg: rgb(0x707070),
+        browser_unselected_hover_button_fg: rgb(0x909090),
+        browser_invalid_name_bg: rgba(0x40404010),
+        browser_unselected_button_fg_invalid: rgb(0x888888),
+        browser_unselected_hover_button_fg_invalid: rgb(0xb0b0b0),
+        browser_folder_text: rgb(0x909090),
+        browser_folder_hover_text: rgb(0xececec),
+        playlist_bar: rgb(0x4a4a4a),
+        playlist_beat: rgb(0x2e2e2e),
+        bg_text: rgb(0x686868),
+        command_palette: rgb(0x1c1c1c),
+        command_palette_border: rgb(0x3c3c3c),
+        command_palette_text: rgb(0x909090),
+        command_palette_placeholder_text: rgba(0x90909040),
+        playhead: rgb(0xf00000),
+        playhead_hover: rgba(0xf000007f),
+        preview: rgb(0xf000f0),
+        hover: rgba(0xffffff20),
+    }
+}

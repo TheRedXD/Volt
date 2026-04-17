@@ -27,4 +27,4 @@ pub mod utils {
     }
 }
 
-const SAMPLE_RATE: f64 = 48000.;
+const SAMPLE_RATE: f64 = 44100.;

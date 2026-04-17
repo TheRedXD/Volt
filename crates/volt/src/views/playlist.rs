@@ -6,7 +6,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    Bounds, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div,
+    AppContext, Bounds, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div,
     hsla, pattern_slash, point, px, rems, size,
 };
 use itertools::Itertools;
@@ -41,10 +41,28 @@ pub struct PlaylistView {
 
 const MIPMAP_HIGH: usize = 1;
 
+#[derive(Clone)]
+struct PlayheadScrub;
+
+struct EmptyDragGhost;
+
+impl gpui::Render for EmptyDragGhost {
+    fn render(&mut self, _window: &mut gpui::Window, _cx: &mut gpui::Context<Self>) -> impl gpui::IntoElement {
+        gpui::div()
+    }
+}
+
 impl PlaylistView {
     pub fn new(theme: Arc<ThemeColors>) -> Self {
         let mut inner = PlaylistAudio::new();
-        let device = default_host().default_output_device().unwrap();
+        let host = default_host();
+        let host_id = host.id();
+        println!("{}", host_id.name());
+        let device = host.default_output_device().unwrap();
+        
+        device.supported_output_configs().iter_mut().for_each(|item| {
+            println!("{:?}", item.next().unwrap().max_sample_rate());
+        });
         let config = device.default_output_config().unwrap().config();
         inner.device_out(&device, &config);
         Self {
@@ -135,13 +153,13 @@ impl Render for PlaylistView {
                             cx.notify();
                         }),
                     )
-                    .on_mouse_move(cx.listener(|view, event: &gpui::MouseMoveEvent, window, cx| {
-                        let hovered_position = event.position.tap_mut(|position| position.x -= view.bounds.left());
-                        view.hovered_position = Some(hovered_position);
-                        if event.dragging() {
-                            view.audio
-                                .seek(Time::Beats(view.width_to_beats(hovered_position.x - view.pan.x.to_pixels(window.rem_size()), window.rem_size())));
-                        }
+                    .on_drag(PlayheadScrub, |_, _, _, cx| {
+                        cx.new(|_| EmptyDragGhost)
+                    })
+                    .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<PlayheadScrub>, window, cx| {
+                        let x_pos = event.event.position.x;
+                        view.audio
+                            .seek(Time::Beats(view.width_to_beats(x_pos - view.bounds.left() - view.pan.x.to_pixels(window.rem_size()), window.rem_size())));
                         cx.notify();
                     }))
                     .children(

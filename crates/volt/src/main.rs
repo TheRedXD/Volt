@@ -41,12 +41,13 @@ struct Navbar {
     app: Entity<Volt>,
 }
 
+// Navbar widget
 impl RenderOnce for Navbar {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let playlist_view = self.playlist.read(cx);
         div()
             .flex()
-            .h_16()
+            .h_10()
             .p_2()
             .gap_2()
             .flex_shrink_0()
@@ -62,8 +63,6 @@ impl RenderOnce for Navbar {
                     .p_2()
                     .gap_2()
                     .items_center()
-                    .border_1()
-                    .border_color(self.theme.navbar_outline)
                     .rounded_md()
                     .bg(self.theme.navbar_widget)
                     .child(img(NAVBAR_ICON).size_8())
@@ -82,8 +81,8 @@ impl RenderOnce for Navbar {
                     .flex()
                     .gap_4()
                     .p_2()
-                    .border_1()
-                    .border_color(self.theme.navbar_outline)
+                    // .border_1()
+                    // .border_color(self.theme.navbar_outline)
                     .rounded_md()
                     .items_center()
                     .bg(self.theme.navbar_widget)
@@ -187,12 +186,12 @@ impl RenderOnce for Navbar {
     }
 }
 
+// BPM widget
 struct Bpm {
     playlist_view: Entity<PlaylistView>,
     tap_times: [Option<Instant>; 10],
     tap_index: usize,
 }
-
 impl Render for Bpm {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let playlist = self.playlist_view.read(cx);
@@ -255,21 +254,19 @@ impl Render for Bpm {
     }
 }
 
+// Volt GUI app setup
 struct Drag(Option<DragInner>);
 struct DragInner {
     start: Point<Pixels>,
     item: AnyDrag,
 }
-
 impl Global for Drag {}
-
 struct Volt {
     browser: Entity<BrowserView>,
     playlist: Entity<PlaylistView>,
     browser_size: f32,
     theme: Arc<ThemeColors>,
 }
-
 impl Volt {
     fn new(cx: &mut App, theme: Arc<ThemeColors>) -> Self {
         Self {
@@ -280,7 +277,6 @@ impl Volt {
         }
     }
 }
-
 impl Render for Volt {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
@@ -345,6 +341,8 @@ impl Render for Volt {
             )
     }
 }
+
+// Main
 
 const NAVBAR_ICON: &str = "navbar-icon";
 const PLAY_ICON: &str = "play-icon";

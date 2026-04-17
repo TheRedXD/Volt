@@ -1,0 +1,41 @@
+{
+    "accent": "#a0a0a0",
+    "navbar_background_gradient_top": "#1f1f1f",
+    "navbar_background_gradient_bottom": "#171717",
+    "navbar_outline": "#3f3f3f",
+    "navbar_widget": "#08080820",
+    "notification_background": "#1c1c1c",
+    "notification_border": "#3c3c3c",
+    "central_background": "#171717",
+    "browser": "#171717",
+    "browser_outline": "#282828",
+    "browser_selected_button_fg": "#d0d0d0",
+    "browser_unselected_button_fg": "#707070",
+    "browser_unselected_hover_button_fg": "#909090",
+    "browser_invalid_name_bg": "#40404010",
+    "browser_unselected_button_fg_invalid": "#888888",
+    "browser_unselected_hover_button_fg_invalid": "#b0b0b0",
+    "browser_folder_text": "#909090",
+    "browser_folder_hover_text": "#ececec",
+    "browser_scrollbar": "#40404040",
+    "playlist_bar": "#4a4a4a",
+    "playlist_beat": "#2e2e2e",
+    "playlist_track_bg": "#1f1f1f",
+    "bg_text": "#686868",
+    "command_palette": "#1c1c1c",
+    "command_palette_border": "#3c3c3c",
+    "command_palette_text": "#909090",
+    "command_palette_placeholder_text": "#90909040",
+    "status_bar_version_text": "#777777",
+    "navbar_element_border": "#35353540",
+    "dialog_border": "#353535",
+    "shadow": {
+        "offset": [
+            0,
+            0
+        ],
+        "blur": 10,
+        "spread": 5,
+        "color": "#00000020"
+    }
+}
