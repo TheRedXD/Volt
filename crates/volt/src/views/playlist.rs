@@ -1,13 +1,13 @@
 use std::{array::from_fn, collections::HashMap, range::Range, sync::Arc};
 
-use blerp::{Beats, Clip, ClipTiming, ClipTimingBeats, ClipTimingSamples, PlaylistAudio, Samples, Time};
+use blerp::{Beats, Clip, ClipTiming, ClipTimingBeats, ClipTimingSamples, PlaylistAudio, SAMPLE_RATE, Samples, Time};
 use cpal::{
-    default_host,
+    SampleRate, default_host,
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    AppContext, Bounds, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div,
-    hsla, pattern_slash, point, px, rems, size,
+    AppContext, Bounds, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas,
+    deferred, div, hsla, pattern_slash, point, px, rems, size,
 };
 use itertools::Itertools;
 use tap::{Conv, Pipe, Tap};
@@ -59,11 +59,11 @@ impl PlaylistView {
         let host_id = host.id();
         println!("{}", host_id.name());
         let device = host.default_output_device().unwrap();
-        
+
         device.supported_output_configs().iter_mut().for_each(|item| {
             println!("{:?}", item.next().unwrap().max_sample_rate());
         });
-        let config = device.default_output_config().unwrap().config();
+        let config = device.default_output_config().unwrap().config().tap_mut(|config| config.sample_rate = SampleRate(SAMPLE_RATE as u32));
         inner.device_out(&device, &config);
         Self {
             audio: inner,
@@ -153,13 +153,12 @@ impl Render for PlaylistView {
                             cx.notify();
                         }),
                     )
-                    .on_drag(PlayheadScrub, |_, _, _, cx| {
-                        cx.new(|_| EmptyDragGhost)
-                    })
+                    .on_drag(PlayheadScrub, |_, _, _, cx| cx.new(|_| EmptyDragGhost))
                     .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<PlayheadScrub>, window, cx| {
                         let x_pos = event.event.position.x;
-                        view.audio
-                            .seek(Time::Beats(view.width_to_beats(x_pos - view.bounds.left() - view.pan.x.to_pixels(window.rem_size()), window.rem_size())));
+                        view.audio.seek(Time::Beats(
+                            view.width_to_beats(x_pos - view.bounds.left() - view.pan.x.to_pixels(window.rem_size()), window.rem_size()),
+                        ));
                         cx.notify();
                     }))
                     .children(

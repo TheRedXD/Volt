@@ -269,7 +269,8 @@ impl Render for BrowserView {
                                                 }
                                             }
                                         })
-                                        .children(from_fn(|| Some(div().bg(theme.browser_outline).w_px().self_stretch())).take(*depth))
+                                        .absolute()
+                                        .children(from_fn(|| Some(div().bg(theme.browser_outline).w_px().self_stretch().flex_shrink_0())).take(*depth))
                                         .pipe(|element| match data {
                                             EntryData::Directory { open } => element.child(if open { "🔼" } else { "🔽" }),
                                             EntryData::File => element.child(
@@ -284,7 +285,8 @@ impl Render for BrowserView {
                                                         FILE_OTHER_ICON
                                                     },
                                                 )
-                                                .size_4(),
+                                                .size_4()
+                                                .flex_shrink_0(),
                                             ),
                                         })
                                         .pipe(|entry| {
