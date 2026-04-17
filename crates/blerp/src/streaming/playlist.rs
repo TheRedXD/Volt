@@ -116,7 +116,7 @@ impl PlaylistAudio {
             let channels = config.channels;
             let initial = self.playlist.clone();
             spawn(move || {
-                const AHEAD: Samples = Samples(256.);
+                const AHEAD: Samples = Samples(1024.);
                 let mut next: Samples = Samples::default();
                 let mut playlist = initial;
                 let mut playing = false;

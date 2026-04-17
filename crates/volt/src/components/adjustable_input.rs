@@ -3,7 +3,7 @@ use gpui::{App, AppContext, Context, Empty, InteractiveElement, IntoElement, Par
 use std::fmt::Display;
 use std::sync::Arc;
 
-pub(crate) type AdjustableInputSet<V> = dyn Fn(V, &mut App) + 'static;
+type AdjustableInputSet<V> = dyn Fn(V, &mut App) + 'static;
 
 pub(crate) trait AdjustableInputValue: Display + 'static + Sized + Clone {
     fn apply_delta(self, delta: f32) -> Self;
@@ -28,12 +28,13 @@ impl AdjustableInputValue for f64 {
 }
 
 #[derive(IntoElement)]
-pub(crate) struct AdjustableInput<V: AdjustableInputValue> {
-    pub(crate) value: V,
-    pub(crate) theme: Arc<ThemeColors>,
-    pub(crate) set: Box<AdjustableInputSet<V>>,
-    pub(crate) name: SharedString,
-    pub(crate) scale: f32,
+pub struct AdjustableInput<V: AdjustableInputValue> {
+    pub value: V,
+    pub theme: Arc<ThemeColors>,
+    pub set: Arc<AdjustableInputSet<V>>,
+    pub name: SharedString,
+    pub scale: f32,
+    pub default: V,
 }
 
 impl<V: AdjustableInputValue> RenderOnce for AdjustableInput<V> {
@@ -48,6 +49,14 @@ impl<V: AdjustableInputValue> RenderOnce for AdjustableInput<V> {
             .py_1()
             .px_2()
             .id(self.name.clone())
+            .on_click({
+                let set = Arc::clone(&self.set);
+                move |click, _, cx| {
+                    if click.click_count() == 2 {
+                        (set)(self.default.clone(), cx);
+                    }
+                }
+            })
             .on_drag(Payload(window.mouse_position(), self.value, self.name.clone().into()), move |_, _, _, cx| cx.new(|_| Empty))
             .on_drag_move({
                 let name = self.name.clone();

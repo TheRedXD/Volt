@@ -110,7 +110,7 @@ impl RenderOnce for Navbar {
                                 theme: Arc::clone(&self.theme),
                                 set: {
                                     let playlist = self.playlist.downgrade();
-                                    Box::new(move |bpm, cx| {
+                                    Arc::new(move |bpm, cx| {
                                         playlist
                                             .update(cx, |playlist, cx| {
                                                 playlist.audio.update_tempo(|_| Tempo::from_bpm(bpm));
@@ -121,6 +121,7 @@ impl RenderOnce for Navbar {
                                 },
                                 scale: 0.1,
                                 name: "Tempo BPM".into(),
+                                default: 120.,
                             })
                             .id("bpm")
                             .hoverable_tooltip({
@@ -144,7 +145,7 @@ impl RenderOnce for Navbar {
                             .child(AdjustableInput {
                                 value: playlist_view.audio.playlist().time_signature.beats_per_measure,
                                 theme: Arc::clone(&self.theme),
-                                set: Box::new({
+                                set: Arc::new({
                                     let playlist = self.playlist.downgrade();
                                     let app = self.app.downgrade();
                                     move |beats_per_measure, cx| {
@@ -160,12 +161,13 @@ impl RenderOnce for Navbar {
                                 }),
                                 scale: 0.01,
                                 name: "Beats per measure".into(),
+                                default: 4,
                             })
                             .child("/")
                             .child(AdjustableInput {
                                 value: playlist_view.audio.playlist().time_signature.beat_value,
                                 theme: Arc::clone(&self.theme),
-                                set: Box::new({
+                                set: Arc::new({
                                     let playlist = self.playlist.downgrade();
                                     let app = self.app.downgrade();
                                     move |beat_value, cx| {
@@ -180,6 +182,7 @@ impl RenderOnce for Navbar {
                                 }),
                                 scale: 0.01,
                                 name: "Beat value".into(),
+                                default: 4,
                             }),
                     ),
             )

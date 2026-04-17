@@ -374,7 +374,7 @@ impl Render for PlaylistView {
                                         .size_full(),
                                     )
                             }))
-                            .child(
+                            .child({
                                 div()
                                     .absolute()
                                     .right_0()
@@ -389,22 +389,23 @@ impl Render for PlaylistView {
                                     .overflow_y_scroll()
                                     .child(format!("Track {}", track_index + 1))
                                     .child(div().flex().gap_4().items_center().child("Gain").child(AdjustableInput {
-                                        value: track.gain,
+                                        value: 20. * track.gain.log10(),
                                         theme: Arc::clone(&theme),
                                         set: {
                                             let view = cx.entity().downgrade();
-                                            Box::new(move |gain, cx| {
+                                            Arc::new(move |gain, cx| {
                                                 view.upgrade().unwrap().update(cx, move |view, _| {
-                                                    view.audio.update_playlist(|playlist| playlist.set_track_gain(track_index, gain));
+                                                    view.audio.update_playlist(|playlist| playlist.set_track_gain(track_index, 10_f32.powf(gain / 20.)));
                                                 });
                                                 cx.notify(view.entity_id());
                                             })
                                         },
                                         scale: 0.01,
                                         name: format!("Track {} gain", track_index + 1).into(),
+                                        default: 0.,
                                     }))
-                                    .pipe(deferred),
-                            )
+                                    .pipe(deferred)
+                            })
                             .child(
                                 div()
                                     .absolute()
