@@ -5,6 +5,8 @@ use egui::{Color32, Frame, Image, Label, Margin, Response, ScrollArea, TextureOp
 use notify::{Event, RecommendedWatcher, recommended_watcher};
 use strum::Display;
 
+use tap::Pipe;
+
 use crate::visual::{browser::categories::Category, theme::ThemeColors};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
