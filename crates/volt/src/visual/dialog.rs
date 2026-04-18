@@ -1,4 +1,4 @@
-use egui::{Align2, Context, CornerRadius, LayerId, Margin, Popup, PopupAnchor, RectAlign, Ui, hex_color};
+use egui::{Align2, Context, CornerRadius, LayerId, Margin, Popup, PopupAnchor, RectAlign, Ui};
 
 use crate::visual::theme::ThemeColors;
 
@@ -18,7 +18,7 @@ pub fn dialog(ctx: &Context, theme: &ThemeColors, inner: impl FnOnce(&mut Ui)) {
     .frame(
         egui::Frame::new()
             .fill(theme.central_background)
-            .stroke(egui::Stroke::new(1., hex_color!("#353248")))
+            .stroke(egui::Stroke::new(1., theme.dialog_border))
             .shadow(theme.shadow)
             .corner_radius(CornerRadius::ZERO.at_least(5))
             .inner_margin(Margin::same(10)),

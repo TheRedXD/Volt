@@ -1,8 +1,8 @@
 #![warn(clippy::nursery, clippy::pedantic, clippy::undocumented_unsafe_blocks, clippy::allow_attributes_without_reason)]
-pub mod device;
+// pub mod device;  // Commented out - unused legacy device implementation
 pub mod processing;
+pub mod streaming;
 pub mod read;
-pub use read::read;
 
 pub mod utils {
     use std::mem::{ManuallyDrop, MaybeUninit, transmute_copy};

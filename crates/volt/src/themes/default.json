@@ -17,13 +17,18 @@
     "browser_unselected_hover_button_fg_invalid": "#f591b5",
     "browser_folder_text": "#928ea7",
     "browser_folder_hover_text": "#ece9ff",
+    "browser_scrollbar": "#7676a340",
     "playlist_bar": "#4c495f",
     "playlist_beat": "#2e2b3f",
+    "playlist_track_bg": "#1f212d",
     "bg_text": "#646987",
     "command_palette": "#1d1b2b",
     "command_palette_border": "#3d3b4b",
     "command_palette_text": "#928ea7",
     "command_palette_placeholder_text": "#928ea740",
+    "status_bar_version_text": "#777490",
+    "navbar_element_border": "#35324840",
+    "dialog_border": "#353248",
     "shadow": {
         "offset": [
             0,

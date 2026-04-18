@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use egui::{Align, CornerRadius, Layout, Shadow, Stroke, TextWrapMode, hex_color};
+use egui::{Align, CornerRadius, Layout, Stroke, TextWrapMode};
 use tap::Pipe;
 
 use crate::visual::theme::ThemeColors;

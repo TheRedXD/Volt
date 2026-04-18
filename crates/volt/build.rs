@@ -62,7 +62,7 @@ fn main() {
     write(
         var("OUT_DIR").unwrap() + "/themes.rs",
         quote! {
-            #(#themes),*
+            #(#themes)*
         }
         .to_string(),
     )

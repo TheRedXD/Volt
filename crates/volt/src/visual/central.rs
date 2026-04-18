@@ -1,5 +1,7 @@
 use std::ops::BitOr;
 use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::Arc;
 use std::{collections::HashMap, num::NonZeroU64};
 
 use blerp::processing::effects::clip::ClipEffect;
@@ -12,7 +14,9 @@ use egui::{
 use graph::{Graph, Node, NodeData, NodeId};
 use itertools::Itertools;
 use playlist::{Clip, ClipData, Playlist, Time};
+use tap::Pipe;
 
+use crate::visual::theme::ThemeColors;
 
 mod graph {
     use blerp::processing::effects::Effect;
@@ -46,9 +50,9 @@ mod graph {
 }
 
 mod playlist {
-    use blerp::read::{Channel, Track};
+    use blerp::read::{Reader, TrackReader};
     use egui::{Vec2, vec2};
-    use std::{fs::File, path::Path, sync::Arc, time::Duration};
+    use std::{fs::File, path::Path, rc::Rc, sync::Arc, time::Duration};
 
     #[derive(Debug)]
     pub struct Playlist {
@@ -121,26 +125,29 @@ mod playlist {
     pub struct Clip {
         pub start: Time,
         pub track: u32,
-        pub data: ClipData,
+        pub data: Rc<ClipData>,
     }
 
-    #[derive(Debug, Clone)]
     pub enum ClipData {
-        Audio { path: Arc<Path>, channels: Vec<Channel<f64>>, length: Duration },
+        Audio { path: Arc<Path>, reader: TrackReader, duration: Duration },
         Midi { length: Time },
+    }
+
+    impl std::fmt::Debug for ClipData {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::Audio { path, reader: _, duration } => f.debug_struct("Audio").field("path", path).field("reader", &"Reader { .. }").field("duration", duration).finish(),
+                Self::Midi { length } => f.debug_struct("Midi").field("length", length).finish(),
+            }
+        }
     }
 
     impl ClipData {
         pub fn from_path(path: Arc<Path>) -> impl Iterator<Item = Self> {
-            blerp::read::<f64, _>(File::open(&path).unwrap()).unwrap().map(move |track| {
-                let Track { channels, sample_rate } = track.unwrap();
-                #[allow(clippy::cast_precision_loss, reason = "this is a duration")]
-                let length = Duration::from_secs_f64(channels.iter().map(|channel| channel.samples.len()).max().unwrap_or(0) as f64 / f64::from(sample_rate.unwrap_or(44100)));
-                Self::Audio {
-                    path: Arc::clone(&path),
-                    channels,
-                    length,
-                }
+            Reader::new(File::open(&path).unwrap()).unwrap().decompose().map(move |reader| Self::Audio {
+                path: Arc::clone(&path),
+                duration: reader.duration(),
+                reader,
             })
         }
     }
@@ -191,7 +198,7 @@ mod playlist {
 
         pub fn duration_of_clip(&self, clip: &ClipData) -> Duration {
             match clip {
-                ClipData::Audio { length, .. } => *length,
+                ClipData::Audio { duration: length, .. } => *length,
                 ClipData::Midi { length } => self.beats_to_duration(length.beats()),
             }
         }
@@ -212,18 +219,19 @@ impl Default for Mode {
 
 pub struct Central {
     pub mode: Mode,
-    playlist: Playlist,
-    graph: Graph,
+    pub playlist: Playlist,
+    pub graph: Graph,
+    theme: Rc<ThemeColors>,
 }
 
 impl Default for Central {
     fn default() -> Self {
-        Self::new()
+        Self::new(Rc::new(ThemeColors::default()))
     }
 }
 
 impl Central {
-    pub fn new() -> Self {
+    pub fn new(theme: Rc<ThemeColors>) -> Self {
         Self {
             mode: Mode::Playlist,
             playlist: Playlist::default(),
@@ -265,13 +273,16 @@ impl Central {
                 ]
                 .into(),
             },
+            
+            theme
         }
     }
 
-    fn add_playlist(ui: &mut Ui, playlist: &mut Playlist) -> Response {
+    fn add_playlist(ui: &mut Ui, playlist: &mut Playlist, theme: Rc<ThemeColors>) -> Response {
         playlist.zoom = playlist.zoom * ui.input(InputState::zoom_delta_2d);
         playlist.zoom += ui.input(|input| input.modifiers.alt.then_some(input.smooth_scroll_delta)).unwrap_or_default();
         playlist.zoom = playlist.zoom.max(vec2(50., 50.));
+        let track_width = 140.;
         ScrollArea::both()
             .auto_shrink(false)
             .scroll_source(ScrollSource {
@@ -287,18 +298,18 @@ impl Central {
                             .rev()
                             .map(|y| {
                                 Frame::default()
-                                    .fill(hex_color!("1f212d"))
+                                    .fill(theme.playlist_track_bg)
                                     .show(ui, |ui| {
                                         let (response, painter) = ui.allocate_painter(vec2(f32::INFINITY, playlist.zoom.y), Sense::hover());
                                         if let Some(path) = response.dnd_release_payload::<PathBuf>()
                                             && let Some(start) = Time::from_beats(
-                                                f64::from((ui.input(|input| input.pointer.latest_pos().unwrap().x) - response.rect.min.x) / playlist.zoom.x)
+                                                f64::from((ui.input(|input| input.pointer.latest_pos().unwrap().x) - response.rect.min.x - track_width) / playlist.zoom.x)
                                                     * f64::from(playlist.time_signature.beats_per_measure),
                                             )
                                         {
-                                            for data in ClipData::from_path((*path).clone().into()) {
-                                                playlist.clips.push(Clip { start, track: y, data });
-                                            }
+                                            playlist
+                                                .clips
+                                                .extend(ClipData::from_path((*path).clone().into()).map(|data| Clip { start, track: y, data: Rc::new(data) }));
                                         }
                                         #[allow(clippy::cast_precision_loss, reason = "rounding errors are negligible because this is a visual effect")]
                                         #[allow(clippy::cast_possible_truncation, reason = "truncation only occurs at unreasonably high numbers")]
@@ -306,7 +317,7 @@ impl Central {
                                             if track != &y {
                                                 continue;
                                             }
-                                            let left = (start.beats() as f32 / playlist.time_signature.beats_per_measure as f32).mul_add(playlist.zoom.x, response.rect.min.x);
+                                            let left = (start.beats() as f32 / playlist.time_signature.beats_per_measure as f32).mul_add(playlist.zoom.x, response.rect.min.x + track_width);
                                             let width =
                                                 playlist.duration_of_clip(data).as_secs_f32() * playlist.tempo.bps() as f32 / playlist.time_signature.beats_per_measure as f32 * playlist.zoom.x;
                                             let rect = Rect::from_min_size(pos2(left, painter.clip_rect().top()), vec2(width, painter.clip_rect().height()));
@@ -315,9 +326,9 @@ impl Central {
                                                 rect.left_top(),
                                                 Align2::LEFT_TOP,
                                                 Color32::BLUE,
-                                                match data {
-                                                    ClipData::Audio { path, channels, length } => {
-                                                        format!("{} ({} ch, {:?})", path.file_name().unwrap().display(), channels.len(), length)
+                                                match &**data {
+                                                    ClipData::Audio { path, reader, duration: length } => {
+                                                        format!("{} ({} ch, {:?})", path.file_name().unwrap().display(), reader.channels(), length)
                                                     }
                                                     ClipData::Midi { .. } => "<midi data>".into(),
                                                 },
@@ -332,14 +343,50 @@ impl Central {
                     .response;
                 #[allow(clippy::cast_possible_truncation, reason = "truncation is intentional")]
                 #[allow(clippy::cast_precision_loss, reason = "rounding errors are negligible because this is a visual effect")]
-                for index in ((ui.clip_rect().left() - response.rect.min.x) / playlist.zoom.x) as i32..((ui.clip_rect().right() - response.rect.min.x) / playlist.zoom.x).ceil() as i32 {
-                    let x = (index as f32).mul_add(playlist.zoom.x, response.rect.min.x);
-                    ui.painter().vline(x, ui.clip_rect().y_range(), Stroke::new(1., hex_color!("5e5a75")));
+                for index in ((ui.clip_rect().left() - response.rect.min.x - track_width) / playlist.zoom.x) as i32..((ui.clip_rect().right() - response.rect.min.x - track_width) / playlist.zoom.x).ceil() as i32 {
+                    let x = (index as f32).mul_add(playlist.zoom.x, response.rect.min.x + track_width);
+                    if index != 0 { 
+                        ui.painter().vline(x, ui.clip_rect().y_range(), Stroke::new(1., theme.playlist_bar));
+                    }
                     for sub_index in 1..playlist.time_signature.beats_per_measure {
                         let x = (sub_index as f32).mul_add(playlist.zoom.x / playlist.time_signature.beats_per_measure as f32, x);
-                        ui.painter().vline(x, ui.clip_rect().y_range(), Stroke::new(1., hex_color!("2e2b3f")));
+                        ui.painter().vline(x, ui.clip_rect().y_range(), Stroke::new(1., theme.playlist_beat));
                     }
                 }
+                for y in 0..=playlist.clips.iter().map(|clip| clip.track + 1).max().unwrap_or_default() {
+                    let top = response.rect.min.y + (playlist.clips.iter().map(|clip| clip.track + 1).max().unwrap_or_default() - y) as f32 * (playlist.zoom.y + 3.);
+                    let rect = Rect::from_min_size(
+                        pos2(response.rect.min.x, top),
+                        vec2(track_width, playlist.zoom.y - 1.)
+                    );
+                    ui.painter().rect(
+                        rect,
+                        egui::CornerRadius {
+                            nw: 0,
+                            ne: 4,
+                            sw: 0,
+                            se: 4,
+                        },
+                        theme.playlist_bar,
+                        Stroke::new(1., Color32::from_white_alpha(40)),
+                        egui::StrokeKind::Inside,
+                    );
+                    let mut text_pos = rect.left_top();
+                    text_pos.x += 8.;
+                    text_pos.y += 5.;
+                    ui.painter().text(
+                        text_pos,
+                        Align2::LEFT_TOP,
+                        format!("Track {}", y),
+                        egui::FontId::proportional(12.),
+                        Color32::from_white_alpha(140),
+                    );
+                }
+                ui.painter().vline(
+                    response.rect.min.x + track_width,
+                    ui.clip_rect().y_range(),
+                    Stroke::new(1., theme.playlist_bar)
+                );
                 response
             })
             .inner
@@ -434,9 +481,10 @@ impl Central {
 
 impl Widget for &mut Central {
     fn ui(self, ui: &mut Ui) -> Response {
+        let theme = self.theme.clone();
         let response = Frame::default()
             .show(ui, |ui| match &mut self.mode {
-                Mode::Playlist => Central::add_playlist(ui, &mut self.playlist),
+                Mode::Playlist => Central::add_playlist(ui, &mut self.playlist, theme),
                 Mode::Graph => Central::add_graph(ui, &mut self.graph),
             })
             .response;
@@ -445,13 +493,14 @@ impl Widget for &mut Central {
                 f64::from((ui.input(|input| input.pointer.latest_pos().unwrap().x) - response.rect.min.x) / self.playlist.zoom.x) * f64::from(self.playlist.time_signature.beats_per_measure),
             )
         {
-            for data in ClipData::from_path((*path).clone().into()) {
-                self.playlist.clips.push(Clip {
+            let last_track = self.playlist.clips.iter().map(|clip| clip.track).max().unwrap_or(0);
+            self.playlist
+                .clips
+                .extend(ClipData::from_path((*path).clone().into()).pipe(|data| (0..).zip(data)).map(|(index, data)| Clip {
                     start,
-                    track: self.playlist.clips.iter().map(|clip| clip.track).max().unwrap_or(0),
-                    data,
-                });
-            }
+                    track: last_track + index,
+                    data: Rc::new(data),
+                }));
         }
         response
     }
