@@ -44,14 +44,6 @@ const MIPMAP_HIGH: usize = 1;
 #[derive(Clone)]
 struct PlayheadScrub;
 
-struct EmptyDragGhost;
-
-impl gpui::Render for EmptyDragGhost {
-    fn render(&mut self, _window: &mut gpui::Window, _cx: &mut gpui::Context<Self>) -> impl gpui::IntoElement {
-        gpui::div()
-    }
-}
-
 impl PlaylistView {
     pub fn new(theme: Arc<ThemeColors>) -> Self {
         let mut inner = PlaylistAudio::new();
@@ -153,7 +145,7 @@ impl Render for PlaylistView {
                             cx.notify();
                         }),
                     )
-                    .on_drag(PlayheadScrub, |_, _, _, cx| cx.new(|_| EmptyDragGhost))
+                    .on_drag(PlayheadScrub, |_, _, _, cx| cx.new(|_| gpui::Empty))
                     .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<PlayheadScrub>, window, cx| {
                         let x_pos = event.event.position.x;
                         view.audio.seek(Time::Beats(
@@ -208,243 +200,259 @@ impl Render for PlaylistView {
             .child(
                 div()
                     .flex()
-                    .flex_col()
                     .flex_grow()
-                    .relative()
-                    .size_full()
-                    .gap_1()
-                    .id("tracks")
-                    .overflow_y_scroll()
-                    .on_pinch(cx.listener(|view, event: &gpui::PinchEvent, window, cx| {
-                        let delta = event.delta;
-                        let old = view.zoom;
-                        view.zoom = view.zoom.map(|length| length * (delta + 1.));
-                        view.zoom.width.0 = view.zoom.width.0.max(8.);
-                        view.zoom.height.0 = view.zoom.height.0.max(2.);
-                        let position = event.position.relative_to(&view.bounds.origin);
-                        view.pan = point(
-                            rems((position.x - (position.x - view.pan.x.to_pixels(window.rem_size())) * view.zoom.width.0 / old.width.0) / window.rem_size()),
-                            rems((position.y - (position.y - view.pan.y.to_pixels(window.rem_size())) * view.zoom.height.0 / old.height.0) / window.rem_size()),
-                        );
-                        cx.notify();
-                    }))
-                    .on_scroll_wheel(cx.listener(|view, event: &gpui::ScrollWheelEvent, window, cx| {
-                        if event.control {
-                            let factor = event.delta.pixel_delta(window.rem_size()).scale(0.001).map(|length| length.as_f32() + 1.);
-                            let old = view.zoom;
-                            view.zoom.width.0 = (view.zoom.width.0 * factor.x).max(8.);
-                            view.zoom.height.0 = (view.zoom.height.0 * factor.y).max(2.);
-                            let factor = point(view.zoom.width.0 / old.width.0, view.zoom.height.0 / old.height.0);
-                            let position = event.position.relative_to(&view.bounds.origin);
-                            view.pan = point(
-                                rems((position.x - (position.x - view.pan.x.to_pixels(window.rem_size())) * factor.x) / window.rem_size()),
-                                rems((position.y - (position.y - view.pan.y.to_pixels(window.rem_size())) * factor.y) / window.rem_size()),
-                            );
-                        } else {
-                            view.pan = view.pan + event.delta.pixel_delta(window.rem_size()).map(|length| rems(length / window.rem_size()));
-                        }
-                        cx.notify();
-                    }))
+                    .overflow_hidden()
                     .child(
-                        canvas(|_, _, _| {}, {
-                            let view = cx.entity().downgrade();
-                            move |bounds, (), window, cx| {
-                                let Some(view) = view.upgrade().map(|entity| entity.read(cx)) else { return };
-                                let beats_per_measure = view.audio.playlist().time_signature.beats_per_measure;
-                                let (measure_builder, beat_builder) = (0..=view.width_to_beats(bounds.size.width, window.rem_size()).u32() + beats_per_measure).fold(
-                                    (PathBuilder::stroke(px(2.)), PathBuilder::stroke(px(1.))),
-                                    |(mut measure_builder, mut beat_builder), beat| {
-                                        let builder = if beat % beats_per_measure == 0 { &mut measure_builder } else { &mut beat_builder };
-                                        let top = bounds.origin.tap_mut(|point| {
-                                            point.x += (view.beats_to_width(Beats::from_u32(beat)) + rems(view.pan.x.0.rem_euclid(view.zoom.width.0) - view.zoom.width.0)).to_pixels(window.rem_size());
-                                        });
-                                        builder.move_to(top);
-                                        builder.line_to(top.tap_mut(|point| point.y = bounds.bottom()));
-                                        (measure_builder, beat_builder)
-                                    },
-                                );
-                                window.paint_path(measure_builder.build().unwrap(), view.theme.playlist_bar);
-                                window.paint_path(beat_builder.build().unwrap(), view.theme.playlist_beat);
-                            }
-                        })
-                        .absolute()
-                        .inset_0()
-                        .h_full(),
-                    )
-                    .children(self.audio.playlist().tracks().iter().enumerate().map(|(track_index, track)| {
                         div()
+                            .flex()
+                            .flex_col()
+                            .flex_grow()
                             .relative()
-                            .h(self.zoom.height)
-                            .children(track.clips().iter().enumerate().map(|(clip_index, clip)| {
-                                let beats = clip.timing.as_beats(tempo);
-                                let start = self.beats_to_width(beats.start) + self.pan.x;
-                                let length = self.beats_to_width(beats.len());
+                            .size_full()
+                            .gap_1()
+                            .id("tracks")
+                            .overflow_y_scroll()
+                            .overflow_hidden()
+                            .on_pinch(cx.listener(|view, event: &gpui::PinchEvent, window, cx| {
+                                let delta = event.delta;
+                                let old = view.zoom;
+                                view.zoom = view.zoom.map(|length| length * (delta + 1.));
+                                view.zoom.width.0 = view.zoom.width.0.max(8.);
+                                view.zoom.height.0 = view.zoom.height.0.max(2.);
+                                let position = event.position.relative_to(&view.bounds.origin);
+                                view.pan = point(
+                                    rems((position.x - (position.x - view.pan.x.to_pixels(window.rem_size())) * view.zoom.width.0 / old.width.0) / window.rem_size()),
+                                    rems((position.y - (position.y - view.pan.y.to_pixels(window.rem_size())) * view.zoom.height.0 / old.height.0) / window.rem_size()),
+                                );
+                                cx.notify();
+                            }))
+                            .on_scroll_wheel(cx.listener(|view, event: &gpui::ScrollWheelEvent, window, cx| {
+                                if event.control {
+                                    let factor = event.delta.pixel_delta(window.rem_size()).scale(0.001).map(|length| length.as_f32() + 1.);
+                                    let old = view.zoom;
+                                    view.zoom.width.0 = (view.zoom.width.0 * factor.x).max(8.);
+                                    view.zoom.height.0 = (view.zoom.height.0 * factor.y).max(2.);
+                                    let factor = point(view.zoom.width.0 / old.width.0, view.zoom.height.0 / old.height.0);
+                                    let position = event.position.relative_to(&view.bounds.origin);
+                                    view.pan = point(
+                                        rems((position.x - (position.x - view.pan.x.to_pixels(window.rem_size())) * factor.x) / window.rem_size()),
+                                        rems((position.y - (position.y - view.pan.y.to_pixels(window.rem_size())) * factor.y) / window.rem_size()),
+                                    );
+                                } else {
+                                    view.pan = view.pan + event.delta.pixel_delta(window.rem_size()).map(|length| rems(length / window.rem_size()));
+                                }
+                                cx.notify();
+                            }))
+                            .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<gpui::Empty>, window, cx| {
+                                match event.event.pressed_button {
+                                    Some(MouseButton::Middle) => {
+                                        // view.pan = view.pan + event.event..pixel_delta(window.rem_size()).map(|length| rems(length / window.rem_size()));
+                                    }
+                                    _ => {}
+                                };
+                                cx.notify();
+                            }))
+                            .child(
+                                canvas(|_, _, _| {}, {
+                                    let view = cx.entity().downgrade();
+                                    move |bounds, (), window, cx| {
+                                        let Some(view) = view.upgrade().map(|entity| entity.read(cx)) else { return };
+                                        let beats_per_measure = view.audio.playlist().time_signature.beats_per_measure;
+                                        let (measure_builder, beat_builder) = (0..=view.width_to_beats(bounds.size.width, window.rem_size()).u32() + beats_per_measure).fold(
+                                            (PathBuilder::stroke(px(2.)), PathBuilder::stroke(px(1.))),
+                                            |(mut measure_builder, mut beat_builder), beat| {
+                                                let builder = if beat % beats_per_measure == 0 { &mut measure_builder } else { &mut beat_builder };
+                                                let top = bounds.origin.tap_mut(|point| {
+                                                    point.x += (view.beats_to_width(Beats::from_u32(beat)) + rems(view.pan.x.0.rem_euclid(view.zoom.width.0) - view.zoom.width.0)).to_pixels(window.rem_size());
+                                                });
+                                                builder.move_to(top);
+                                                builder.line_to(top.tap_mut(|point| point.y = bounds.bottom()));
+                                                (measure_builder, beat_builder)
+                                            },
+                                        );
+                                        window.paint_path(measure_builder.build().unwrap(), view.theme.playlist_bar);
+                                        window.paint_path(beat_builder.build().unwrap(), view.theme.playlist_beat);
+                                    }
+                                })
+                                .absolute()
+                                .inset_0()
+                                .h_full(),
+                            )
+                            .children(self.audio.playlist().tracks().iter().enumerate().map(|(track_index, track)| {
                                 div()
-                                    .absolute()
-                                    .left(start)
-                                    .top_0()
-                                    .h_full()
-                                    .w(length)
-                                    .bg(pattern_slash(hsla(0., 0., 0.2, 1.), 2., 5.))
-                                    .overflow_hidden()
-                                    .rounded_md()
-                                    .border_1()
-                                    .border_color(theme.navbar_outline)
+                                    .relative()
+                                    .h(self.zoom.height)
+                                    .children(track.clips().iter().enumerate().map(|(clip_index, clip)| {
+                                        let beats = clip.timing.as_beats(tempo);
+                                        let start = self.beats_to_width(beats.start) + self.pan.x;
+                                        let length = self.beats_to_width(beats.len());
+                                        div()
+                                            .absolute()
+                                            .left(start)
+                                            .top_0()
+                                            .h_full()
+                                            .w(length)
+                                            .bg(pattern_slash(hsla(0., 0., 0.2, 1.), 2., 5.))
+                                            .overflow_hidden()
+                                            .rounded_md()
+                                            .border_1()
+                                            .border_color(theme.navbar_outline)
+                                            .child(
+                                                div()
+                                                    .absolute()
+                                                    .left_0()
+                                                    .top_0()
+                                                    .bottom_0()
+                                                    .w(self.beats_to_width(clip.data_len().beats(tempo)))
+                                                    .bg(theme.central_background),
+                                            )
+                                            // .child(div().absolute().right_0().child({
+                                            //     let width = self.beats_to_width(clip.data_len().beats(tempo)).to_pixels(window.rem_size());
+                                            //     let window_size = clip.data_len().samples(tempo).f64() / width.to_f64();
+                                            //     let level = (window_size / MIPMAP_HIGH as f64).log2().floor().max(0.) as usize;
+                                            //     let level = level.min(self.clip_waveforms.get(&ClipId { track: track_index, clip: clip_index }).map_or(1, Vec::len) - 1);
+                                            //     format!("Rendering at {} samples per px", (MIPMAP_HIGH << level))
+                                            // }))
+                                            .child(
+                                                canvas(|_, _, _| {}, {
+                                                    let mut clip = clip.clone();
+                                                    let width = self.beats_to_width(clip.data_len().beats(tempo)).to_pixels(window.rem_size());
+                                                    let window_size = clip.data_len().samples(tempo).f64() / width.to_f64();
+                                                    let view = cx.entity().downgrade();
+                                                    let theme = Arc::clone(&theme);
+                                                    move |bounds, (), window, cx| {
+                                                        let level = view
+                                                            .update(cx, |view, _| {
+                                                                let levels = view.clip_waveforms.entry(ClipId { track: track_index, clip: clip_index }).or_insert_with(|| {
+                                                                    let base = clip.base_minmax_mipmap(tempo, MIPMAP_HIGH);
+        
+                                                                    let max = 10;
+                                                                    (0..max).fold(Vec::with_capacity(max).tap_mut(|levels| levels.push(base)), |mut levels, exponent| {
+                                                                        let from = levels.last().unwrap();
+                                                                        levels.push(
+                                                                            from.chunks(2)
+                                                                                .map(|chunk| match chunk {
+                                                                                    [a, b] => Range::from(a.start.min(b.start)..a.end.max(b.end)),
+                                                                                    [a] => Range::from(a.start..a.end),
+                                                                                    [] => Range::default(),
+                                                                                    _ => unreachable!(),
+                                                                                })
+                                                                                .collect(),
+                                                                        );
+                                                                        levels
+                                                                    })
+                                                                });
+                                                                let level = (window_size / MIPMAP_HIGH as f64).log2().floor().max(0.) as usize;
+                                                                level.min(levels.len() - 1)
+                                                            })
+                                                            .unwrap();
+                                                        let waveform = view
+                                                            .upgrade()
+                                                            .unwrap()
+                                                            .read(cx)
+                                                            .clip_waveforms
+                                                            .get(&ClipId { track: track_index, clip: clip_index })
+                                                            .unwrap()
+                                                            .get(level)
+                                                            .unwrap();
+                                                        let left = bounds.left();
+                                                        let bounds = bounds.intersect(&window.bounds());
+                                                        if bounds.is_empty() {
+                                                            return;
+                                                        }
+                                                        let paths = ((bounds.left() - left).conv::<usize>()..width.min(bounds.left() - left + bounds.size.width).conv::<usize>())
+                                                            .fold(
+                                                                from_fn(|_| PathBuilder::stroke(px(2.)).tap_mut(|builder| builder.move_to(bounds.center().tap_mut(|point| point.x = left)))),
+                                                                |mut builders: [_; 2], x| {
+                                                                    let range = waveform.get((x as f64 * window_size / (MIPMAP_HIGH << level) as f64) as usize).copied().unwrap_or_default();
+                                                                    for (sample, builder) in [range.start, range.end].iter().zip(&mut builders) {
+                                                                        builder.line_to(point(x.conv::<Pixels>() + left, bounds.center().y + bounds.size.height / 2. * *sample));
+                                                                    }
+                                                                    builders
+                                                                },
+                                                            )
+                                                            .map(PathBuilder::build)
+                                                            .map(Result::unwrap);
+                                                        for path in paths {
+                                                            window.paint_path(path, theme.accent);
+                                                        }
+                                                    }
+                                                })
+                                                .size_full(),
+                                            )
+                                    }))
+                                    .child({
+                                        div()
+                                            .absolute()
+                                            .right_0()
+                                            .top_0()
+                                            .h_full()
+                                            .p_4()
+                                            .bg(theme.central_background)
+                                            .rounded_md()
+                                            .border_1()
+                                            .border_color(theme.navbar_outline)
+                                            .id(track_index)
+                                            .overflow_y_scroll()
+                                            .child(format!("Track {}", track_index + 1))
+                                            .child(div().flex().gap_4().items_center().child("Gain").child(AdjustableInput {
+                                                value: 20. * track.gain.log10(),
+                                                theme: Arc::clone(&theme),
+                                                set: {
+                                                    let view = cx.entity().downgrade();
+                                                    Arc::new(move |gain, cx| {
+                                                        view.upgrade().unwrap().update(cx, move |view, _| {
+                                                            view.audio.update_playlist(|playlist| playlist.set_track_gain(track_index, 10_f32.powf(gain / 20.)));
+                                                        });
+                                                        cx.notify(view.entity_id());
+                                                    })
+                                                },
+                                                scale: 0.01,
+                                                name: format!("Track {} gain", track_index + 1).into(),
+                                                default: 0.,
+                                            }))
+                                            .pipe(deferred)
+                                    })
                                     .child(
                                         div()
                                             .absolute()
-                                            .left_0()
-                                            .top_0()
-                                            .bottom_0()
-                                            .w(self.beats_to_width(clip.data_len().beats(tempo)))
-                                            .bg(theme.central_background),
-                                    )
-                                    .child(div().absolute().right_0().child({
-                                        let width = self.beats_to_width(clip.data_len().beats(tempo)).to_pixels(window.rem_size());
-                                        let window_size = clip.data_len().samples(tempo).f64() / width.to_f64();
-                                        let level = (window_size / MIPMAP_HIGH as f64).log2().floor().max(0.) as usize;
-                                        let level = level.min(self.clip_waveforms.get(&ClipId { track: track_index, clip: clip_index }).map_or(1, Vec::len) - 1);
-                                        format!("Rendering at {} samples per px", (MIPMAP_HIGH << level))
-                                    }))
-                                    .child(
-                                        canvas(|_, _, _| {}, {
-                                            let mut clip = clip.clone();
-                                            let width = self.beats_to_width(clip.data_len().beats(tempo)).to_pixels(window.rem_size());
-                                            let window_size = clip.data_len().samples(tempo).f64() / width.to_f64();
-                                            let view = cx.entity().downgrade();
-                                            let theme = Arc::clone(&theme);
-                                            move |bounds, (), window, cx| {
-                                                let level = view
-                                                    .update(cx, |view, _| {
-                                                        let levels = view.clip_waveforms.entry(ClipId { track: track_index, clip: clip_index }).or_insert_with(|| {
-                                                            let base = clip.base_minmax_mipmap(tempo, MIPMAP_HIGH);
-
-                                                            let max = 10;
-                                                            (0..max).fold(Vec::with_capacity(max).tap_mut(|levels| levels.push(base)), |mut levels, exponent| {
-                                                                let from = levels.last().unwrap();
-                                                                levels.push(
-                                                                    from.chunks(2)
-                                                                        .map(|chunk| match chunk {
-                                                                            [a, b] => Range::from(a.start.min(b.start)..a.end.max(b.end)),
-                                                                            [a] => Range::from(a.start..a.end),
-                                                                            [] => Range::default(),
-                                                                            _ => unreachable!(),
-                                                                        })
-                                                                        .collect(),
-                                                                );
-                                                                levels
-                                                            })
-                                                        });
-                                                        let level = (window_size / MIPMAP_HIGH as f64).log2().floor().max(0.) as usize;
-                                                        level.min(levels.len() - 1)
-                                                    })
-                                                    .unwrap();
-                                                let waveform = view
-                                                    .upgrade()
-                                                    .unwrap()
-                                                    .read(cx)
-                                                    .clip_waveforms
-                                                    .get(&ClipId { track: track_index, clip: clip_index })
-                                                    .unwrap()
-                                                    .get(level)
-                                                    .unwrap();
-                                                let left = bounds.left();
-                                                let bounds = bounds.intersect(&window.bounds());
-                                                if bounds.is_empty() {
-                                                    return;
-                                                }
-                                                let paths = ((bounds.left() - left).conv::<usize>()..width.min(bounds.left() - left + bounds.size.width).conv::<usize>())
-                                                    .fold(
-                                                        from_fn(|_| PathBuilder::stroke(px(2.)).tap_mut(|builder| builder.move_to(bounds.center().tap_mut(|point| point.x = left)))),
-                                                        |mut builders: [_; 2], x| {
-                                                            let range = waveform.get((x as f64 * window_size / (MIPMAP_HIGH << level) as f64) as usize).copied().unwrap_or_default();
-                                                            for (sample, builder) in [range.start, range.end].iter().zip(&mut builders) {
-                                                                builder.line_to(point(x.conv::<Pixels>() + left, bounds.center().y + bounds.size.height / 2. * *sample));
-                                                            }
-                                                            builders
-                                                        },
-                                                    )
-                                                    .map(PathBuilder::build)
-                                                    .map(Result::unwrap);
-                                                for path in paths {
-                                                    window.paint_path(path, theme.accent);
-                                                }
-                                            }
-                                        })
-                                        .size_full(),
+                                            .inset_0()
+                                            .id(track_index)
+                                            .bg(theme.hover)
+                                            .invisible()
+                                            .drag_over(move |style, _: &EntryDragPayload, _, _| style.visible())
+                                            .on_drop(cx.listener(move |view, EntryDragPayload(Entry { path, .. }), window, cx| {
+                                                let start =
+                                                    Time::Beats(view.width_to_beats(window.mouse_position().relative_to(&view.bounds.origin).x - view.pan.x.to_pixels(window.rem_size()), window.rem_size()));
+                                                view.audio.update_playlist(|playlist| {
+                                                    playlist.add_clips(track_index, Arc::clone(path), start);
+                                                });
+                                                cx.notify();
+                                            }))
+                                            .flex()
+                                            .justify_center()
+                                            .items_center()
+                                            .child("Drop to add clips"),
                                     )
                             }))
-                            .child({
-                                div()
-                                    .absolute()
-                                    .right_0()
-                                    .top_0()
-                                    .h_full()
-                                    .p_4()
-                                    .bg(theme.central_background)
-                                    .rounded_md()
-                                    .border_1()
-                                    .border_color(theme.navbar_outline)
-                                    .id(track_index)
-                                    .overflow_y_scroll()
-                                    .child(format!("Track {}", track_index + 1))
-                                    .child(div().flex().gap_4().items_center().child("Gain").child(AdjustableInput {
-                                        value: 20. * track.gain.log10(),
-                                        theme: Arc::clone(&theme),
-                                        set: {
-                                            let view = cx.entity().downgrade();
-                                            Arc::new(move |gain, cx| {
-                                                view.upgrade().unwrap().update(cx, move |view, _| {
-                                                    view.audio.update_playlist(|playlist| playlist.set_track_gain(track_index, 10_f32.powf(gain / 20.)));
-                                                });
-                                                cx.notify(view.entity_id());
-                                            })
-                                        },
-                                        scale: 0.01,
-                                        name: format!("Track {} gain", track_index + 1).into(),
-                                        default: 0.,
-                                    }))
-                                    .pipe(deferred)
-                            })
-                            .child(
-                                div()
-                                    .absolute()
-                                    .inset_0()
-                                    .id(track_index)
-                                    .bg(theme.hover)
-                                    .invisible()
-                                    .drag_over(move |style, _: &EntryDragPayload, _, _| style.visible())
-                                    .on_drop(cx.listener(move |view, EntryDragPayload(Entry { path, .. }), window, cx| {
-                                        let start =
-                                            Time::Beats(view.width_to_beats(window.mouse_position().relative_to(&view.bounds.origin).x - view.pan.x.to_pixels(window.rem_size()), window.rem_size()));
-                                        view.audio.update_playlist(|playlist| {
-                                            playlist.add_clips(track_index, Arc::clone(path), start);
-                                        });
-                                        cx.notify();
-                                    }))
-                                    .flex()
-                                    .justify_center()
-                                    .items_center()
-                                    .child("Drop to add clips"),
+                            .children(
+                                self.hovered_position
+                                    .map(|hovered_position| div().w_px().bg(theme.playhead_hover).absolute().top_0().bottom_0().left(hovered_position.x)),
                             )
-                    }))
-                    .children(
-                        self.hovered_position
-                            .map(|hovered_position| div().w_px().bg(theme.playhead_hover).absolute().top_0().bottom_0().left(hovered_position.x)),
+                            .child(div().w_px().bg(theme.playhead).absolute().top_0().bottom_0().left(playhead_x))
+                            .children(self.audio.playlist().preview.into_iter().flat_map(|preview| {
+                                let timing = preview.as_beats(tempo);
+                                [timing.start, timing.end].map(|time| {
+                                    div()
+                                        .w_px()
+                                        .bg(theme.preview)
+                                        .absolute()
+                                        .top_0()
+                                        .bottom_0()
+                                        .left(rems(time.f32() / self.audio.playlist().time_signature.beats_per_measure as f32 * self.zoom.width.0) + self.pan.x)
+                                })
+                            })),
                     )
-                    .child(div().w_px().bg(theme.playhead).absolute().top_0().bottom_0().left(playhead_x))
-                    .children(self.audio.playlist().preview.into_iter().flat_map(|preview| {
-                        let timing = preview.as_beats(tempo);
-                        [timing.start, timing.end].map(|time| {
-                            div()
-                                .w_px()
-                                .bg(theme.preview)
-                                .absolute()
-                                .top_0()
-                                .bottom_0()
-                                .left(rems(time.f32() / self.audio.playlist().time_signature.beats_per_measure as f32 * self.zoom.width.0) + self.pan.x)
-                        })
-                    })),
             )
     }
 }

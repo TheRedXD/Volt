@@ -27,6 +27,7 @@ symphonia = { version = "0.5.4", features = ["all"] }
 strsim = "0.11.1"
 unhygienic2 = "0.1.0"
 gpui = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
 sum_tree = { git = "https://github.com/zed-industries/zed" }
 

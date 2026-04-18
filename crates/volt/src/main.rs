@@ -14,9 +14,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    AnyDrag, AnyView, App, AssetSource, Bounds, Context, DefiniteLength, Div, DivFrameState, ElementId, Empty, Entity, FocusHandle, Global, Hitbox, KeyBinding, LayoutId, List, MouseButton,
-    PathBuilder, Pixels, Point, Rems, Rgba, SharedString, Size, Stateful, Style, StyleRefinement, Styled, WeakEntity, Window, WindowBounds, WindowOptions, actions, canvas, deferred, div, hsla, img,
-    linear_color_stop, linear_gradient, pattern_slash, point, prelude::*, px, rems, rgb, rgba, size,
+    AnyDrag, AnyView, App, AssetSource, Bounds, Context, DefiniteLength, Div, DivFrameState, ElementId, Empty, Entity, FocusHandle, Global, Hitbox, KeyBinding, LayoutId, List, MouseButton, PathBuilder, Pixels, Point, Rems, Rgba, SharedString, Size, Stateful, Style, StyleRefinement, Styled, TitlebarOptions, WeakEntity, Window, WindowBounds, WindowOptions, actions, canvas, deferred, div, hsla, img, linear_color_stop, linear_gradient, pattern_slash, point, prelude::*, px, rems, rgb, rgba, size
 };
 use gpui_platform::application;
 use itertools::Itertools;
@@ -60,88 +58,79 @@ impl RenderOnce for Navbar {
             .child(
                 div()
                     .flex()
-                    .p_2()
-                    .gap_2()
+                    .p_1()
+                    .gap_1()
                     .items_center()
                     .rounded_md()
-                    .bg(self.theme.navbar_widget)
-                    .child(img(NAVBAR_ICON).size_8())
+                    .child(img(NAVBAR_ICON).size_6())
                     .child(div().w_px().bg(self.theme.navbar_outline).h_full())
                     .child(
                         div()
                             .flex()
-                            .gap_2()
+                            .gap_1()
                             .items_center()
-                            .children(["File", "Edit", "View", "Help"].map(|name| div().child(name).py_1().px_2().rounded_md().id(name).hover(|style| style.bg(self.theme.hover)))),
+                            .children(["File", "Edit", "View", "Help"].map(|name| div().child(name).text_sm().py_px().px_1().rounded_sm().id(name).hover(|style| style.bg(self.theme.hover)))),
                     ),
             )
             .child(
                 div()
                     .flex_grow()
                     .flex()
-                    .gap_4()
+                    .gap_2()
                     .p_2()
-                    // .border_1()
-                    // .border_color(self.theme.navbar_outline)
                     .rounded_md()
                     .items_center()
-                    .bg(self.theme.navbar_widget)
-                    .child(img(PLAY_ICON).size_8().on_mouse_down(MouseButton::Left, {
-                        let playlist = self.playlist.clone();
-                        move |_, _, cx| {
-                            playlist.update(cx, |playlist, cx| {
-                                if playlist.audio.playing() {
-                                    playlist.audio.stop();
-                                } else {
-                                    playlist.audio.play();
-                                }
-                                cx.notify();
-                            });
-                        }
-                    }))
                     .child(
                         div()
-                            .flex()
-                            .gap_2()
-                            .items_center()
-                            .child("BPM")
-                            .child(AdjustableInput {
-                                value: playlist_view.audio.playlist().tempo.bpm(),
-                                theme: Arc::clone(&self.theme),
-                                set: {
-                                    let playlist = self.playlist.downgrade();
-                                    Arc::new(move |bpm, cx| {
-                                        playlist
-                                            .update(cx, |playlist, cx| {
-                                                playlist.audio.update_tempo(|_| Tempo::from_bpm(bpm));
-                                                cx.notify();
+                            .flex_shrink()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_shrink()
+                                    .text_sm()
+                                    .items_center()
+                                    .line_height(DefiniteLength::Fraction(1.))
+                                    .child(div().child("BPM").text_xs())
+                                    .child(AdjustableInput {
+                                        value: playlist_view.audio.playlist().tempo.bpm(),
+                                        theme: Arc::clone(&self.theme),
+                                        set: {
+                                            let playlist = self.playlist.downgrade();
+                                            Arc::new(move |bpm, cx| {
+                                                playlist
+                                                    .update(cx, |playlist, cx| {
+                                                        playlist.audio.update_tempo(|_| Tempo::from_bpm(bpm));
+                                                        cx.notify();
+                                                    })
+                                                    .unwrap();
                                             })
-                                            .unwrap();
+                                        },
+                                        scale: 0.1,
+                                        name: "Tempo BPM".into(),
+                                        default: 120.,
                                     })
-                                },
-                                scale: 0.1,
-                                name: "Tempo BPM".into(),
-                                default: 120.,
-                            })
-                            .id("bpm")
-                            .hoverable_tooltip({
-                                let playlist_view = self.playlist.clone();
-                                move |_, cx| {
-                                    let playlist_view = playlist_view.clone();
-                                    cx.new(move |_| Bpm {
-                                        playlist_view,
-                                        tap_times: [None; _],
-                                        tap_index: 0,
-                                    })
-                                    .into()
-                                }
-                            }),
+                                    .id("bpm")
+                                    .hoverable_tooltip({
+                                        let playlist_view = self.playlist.clone();
+                                        move |_, cx| {
+                                            let playlist_view = playlist_view.clone();
+                                            cx.new(move |_| Bpm {
+                                                playlist_view,
+                                                tap_times: [None; _],
+                                                tap_index: 0,
+                                            })
+                                            .into()
+                                        }
+                                    }),
+                            )
                     )
                     .child(
                         div()
                             .flex()
-                            .gap_1()
+                            .gap_0p5()
                             .items_center()
+                            .text_sm()
                             .child(AdjustableInput {
                                 value: playlist_view.audio.playlist().time_signature.beats_per_measure,
                                 theme: Arc::clone(&self.theme),
@@ -180,11 +169,24 @@ impl RenderOnce for Navbar {
                                         cx.notify(app.entity_id());
                                     }
                                 }),
-                                scale: 0.01,
+                                scale: 0.02,
                                 name: "Beat value".into(),
                                 default: 4,
                             }),
-                    ),
+                    )
+                    .child(img(PLAY_ICON).size_6().on_mouse_down(MouseButton::Left, {
+                        let playlist = self.playlist.clone();
+                        move |_, _, cx| {
+                            playlist.update(cx, |playlist, cx| {
+                                if playlist.audio.playing() {
+                                    playlist.audio.stop();
+                                } else {
+                                    playlist.audio.play();
+                                }
+                                cx.notify();
+                            });
+                        }
+                    })),
             )
     }
 }
@@ -383,6 +385,11 @@ fn main() {
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Maximized(bounds)),
+                app_id: Some("sh.thered.Volt".into()),
+                titlebar: Some(TitlebarOptions{
+                    title: Some("Volt".into()),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
             |_, cx| cx.new(|cx| Volt::new(cx, Arc::new(default()))),

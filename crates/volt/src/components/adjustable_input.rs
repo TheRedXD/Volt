@@ -1,5 +1,5 @@
 use crate::theme::ThemeColors;
-use gpui::{App, AppContext, Context, Empty, InteractiveElement, IntoElement, ParentElement, Pixels, Point, Render, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div};
+use gpui::{App, AppContext, Context, Empty, InteractiveElement, IntoElement, MouseButton, ParentElement, Pixels, Point, Render, RenderOnce, SharedString, StatefulInteractiveElement, Styled, Window, div};
 use std::fmt::Display;
 use std::sync::Arc;
 
@@ -41,10 +41,10 @@ impl<V: AdjustableInputValue> RenderOnce for AdjustableInput<V> {
     fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
         struct Payload<V: AdjustableInputValue>(Point<Pixels>, V, SharedString);
         div()
-            .child(div().child(format!("{:.02}", self.value)))
+            .child(div().child(format!("{:.02}", self.value)).font_family("IBM Plex Mono"))
             .rounded_md()
-            .border_1()
-            .border_color(self.theme.navbar_outline)
+            // .border_1()
+            // .border_color(self.theme.navbar_outline)
             .cursor_ns_resize()
             .py_1()
             .px_2()
@@ -70,6 +70,9 @@ impl<V: AdjustableInputValue> RenderOnce for AdjustableInput<V> {
                     (self.set)(value, cx);
                 }
             })
+            .on_mouse_up(MouseButton::Left, (|event, window, cx| {
+                
+            }))
             .tooltip({
                 let name = self.name.clone();
                 move |_, cx| {
