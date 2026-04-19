@@ -90,7 +90,7 @@ impl PlaylistAudio {
     }
 
     pub fn device_out(&mut self, device: &cpal::Device, config: &cpal::StreamConfig) -> &mut PlaylistOutput {
-        let (mut master_tx, mut master_rx) = HeapRb::new(1024).split();
+        let (mut master_tx, mut master_rx) = HeapRb::new(2048*1024).split();
 
         let stream = device
             .build_output_stream(
@@ -234,7 +234,7 @@ impl PlaylistAudio {
                                 next += Samples(vacant / f64::from(channels));
                             }
                             cmp::Ordering::Greater | cmp::Ordering::Equal => {
-                                sleep(Duration::from_millis(5));
+                                sleep(Duration::from_millis(1));
                             }
                         }
                     }
