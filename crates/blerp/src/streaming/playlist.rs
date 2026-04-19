@@ -149,87 +149,93 @@ impl PlaylistAudio {
                         });
                     }
                     let playhead = playhead.load(atomic::Ordering::Relaxed);
-                    match (next.0 - playhead as f64).partial_cmp(&AHEAD.0).unwrap() {
-                        cmp::Ordering::Less => {
-                            let vacant = master_tx.vacant_len() as f64;
-                            let block = ClipTimingSamples {
-                                start: next,
-                                end: next + Samples(vacant),
-                                offset: Samples(0.),
-                            };
-                            let mut buffer = vec![0.; vacant as usize];
-                            for track in &mut playlist.tracks {
-                                for clip in &mut track.clips {
-                                    let ClipTimingSamples { start, end, offset } = clip.timing.as_samples(playlist.tempo);
-                                    let intersection = start.usize().max(block.start.usize())..end.usize().min(block.end.usize());
-                                    if intersection.is_empty() {
-                                        continue;
-                                    }
-                                    let destination = intersection.start - block.start.usize();
-                                    let destination = destination..destination + intersection.len();
-                                    let source = intersection.start + offset.usize() - start.usize();
-                                    let source = Range::from(source..source + intersection.len());
-                                    match &mut clip.data {
-                                        ClipData::Audio(AudioClipData { data }) => {
-                                            if source.start >= data.len() {
-                                                continue;
-                                            }
-                                            let source = source.start..source.end.clamp(0, data.len());
-                                            for (buffer, data) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&data[source]) {
-                                                for sample in buffer {
-                                                    *sample = (*data).mul_add(track.gain, *sample);
-                                                }
-                                            }
+                    if playing {
+                        match (next.0 - playhead as f64).partial_cmp(&AHEAD.0).unwrap() {
+                            cmp::Ordering::Less => {
+                                let vacant = master_tx.vacant_len() as f64;
+                                if vacant != 0. {
+                                    println!("{}", vacant);
+                                }
+                                let block = ClipTimingSamples {
+                                    start: next,
+                                    end: next + Samples(vacant),
+                                    offset: Samples(0.),
+                                };
+                                let mut buffer = vec![0.; vacant as usize];
+                                for track in &mut playlist.tracks {
+                                    for clip in &mut track.clips {
+                                        let ClipTimingSamples { start, end, offset } = clip.timing.as_samples(playlist.tempo);
+                                        let intersection = start.usize().max(block.start.usize())..end.usize().min(block.end.usize());
+                                        if intersection.is_empty() {
+                                            continue;
                                         }
-                                        ClipData::Symphonia(data) => {
-                                            if source.start as u64 >= data.decoder.codec_params().n_frames.unwrap() {
-                                                continue;
-                                            }
-
-                                            let SeekedTo { required_ts, actual_ts, .. } = data
-                                                .reader
-                                                .format_reader
-                                                .seek(
-                                                    SeekMode::Accurate,
-                                                    SeekTo::Time {
-                                                        time: SymphoniaTime::from(source.start as f64 / SAMPLE_RATE),
-                                                        track_id: data.reader.format_reader.tracks()[data.track].id.into(),
-                                                    },
-                                                )
-                                                .unwrap();
-                                            let error = data.decoder.codec_params().time_base.unwrap().calc_time(required_ts - actual_ts).conv::<Duration>().as_secs_f64() * SAMPLE_RATE;
-                                            let mut decoded = Vec::<f32>::with_capacity(source.end - source.start);
-                                            loop {
-                                                let packet = match data.reader.format_reader.next_packet() {
-                                                    Ok(packet) => packet,
-                                                    Err(SymphoniaError::IoError(error)) if error.kind() == io::ErrorKind::UnexpectedEof => break,
-                                                    Err(error) => {
-                                                        panic!("{}", error);
+                                        let destination = intersection.start - block.start.usize();
+                                        let destination = destination..destination + intersection.len();
+                                        let source = intersection.start + offset.usize() - start.usize();
+                                        let source = Range::from(source..source + intersection.len());
+                                        println!("{} {}", source.start, match &mut clip.data { ClipData::Audio(AudioClipData { data }) => data.len(), _ => 0 });
+                                        match &mut clip.data {
+                                            ClipData::Audio(AudioClipData { data }) => {
+                                                if source.start >= data.len() {
+                                                    continue;
+                                                }
+                                                let source = source.start..source.end.clamp(0, data.len());
+                                                for (buffer, data) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&data[source]) {
+                                                    for sample in buffer {
+                                                        *sample = (*data).mul_add(track.gain, *sample);
                                                     }
-                                                };
-                                                let source = data.decoder.decode(&packet).unwrap();
-                                                let mut destination = source.make_equivalent::<f32>();
-                                                source.convert(&mut destination);
-                                                let len = decoded.spare_capacity_mut().len();
-                                                decoded.extend(destination.chan(0).iter().skip(error.round() as usize).take(len));
-                                                if len == 0 {
-                                                    break;
                                                 }
                                             }
-                                            for (buffer, data) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&decoded) {
-                                                for sample in buffer {
-                                                    *sample = (*data).mul_add(track.gain, *sample);
+                                            ClipData::Symphonia(data) => {
+                                                if source.start as u64 >= data.decoder.codec_params().n_frames.unwrap() {
+                                                    continue;
+                                                }
+    
+                                                let SeekedTo { required_ts, actual_ts, .. } = data
+                                                    .reader
+                                                    .format_reader
+                                                    .seek(
+                                                        SeekMode::Accurate,
+                                                        SeekTo::Time {
+                                                            time: SymphoniaTime::from(source.start as f64 / SAMPLE_RATE),
+                                                            track_id: data.reader.format_reader.tracks()[data.track].id.into(),
+                                                        },
+                                                    )
+                                                    .unwrap();
+                                                let error = data.decoder.codec_params().time_base.unwrap().calc_time(required_ts - actual_ts).conv::<Duration>().as_secs_f64() * SAMPLE_RATE;
+                                                let mut decoded = Vec::<f32>::with_capacity(source.end - source.start);
+                                                loop {
+                                                    let packet = match data.reader.format_reader.next_packet() {
+                                                        Ok(packet) => packet,
+                                                        Err(SymphoniaError::IoError(error)) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+                                                        Err(error) => {
+                                                            panic!("{}", error);
+                                                        }
+                                                    };
+                                                    let source = data.decoder.decode(&packet).unwrap();
+                                                    let mut destination = source.make_equivalent::<f32>();
+                                                    source.convert(&mut destination);
+                                                    let len = decoded.spare_capacity_mut().len();
+                                                    decoded.extend(destination.chan(0).iter().skip(error.round() as usize).take(len));
+                                                    if len == 0 {
+                                                        break;
+                                                    }
+                                                }
+                                                for (buffer, data) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&decoded) {
+                                                    for sample in buffer {
+                                                        *sample = (*data).mul_add(track.gain, *sample);
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
+                                master_tx.push_slice(&buffer);
+                                next += Samples(vacant / f64::from(channels));
                             }
-                            master_tx.push_slice(&buffer);
-                            next += Samples(vacant / f64::from(channels));
-                        }
-                        cmp::Ordering::Greater | cmp::Ordering::Equal => {
-                            sleep(Duration::from_millis(5));
+                            cmp::Ordering::Greater | cmp::Ordering::Equal => {
+                                sleep(Duration::from_millis(5));
+                            }
                         }
                     }
                 }

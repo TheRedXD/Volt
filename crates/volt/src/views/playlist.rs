@@ -6,8 +6,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    AppContext, Bounds, Context, InteractiveElement, IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas,
-    deferred, div, hsla, pattern_slash, point, px, rems, size,
+    AppContext, Bounds, Context, DefiniteLength, InteractiveElement, IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div, hsla, pattern_slash, point, px, rems, size
 };
 use itertools::Itertools;
 use tap::{Conv, Pipe, Tap};
@@ -43,6 +42,8 @@ const MIPMAP_HIGH: usize = 1;
 
 #[derive(Clone)]
 struct PlayheadScrub;
+#[derive(Clone)]
+struct PlaylistPan;
 
 impl PlaylistView {
     pub fn new(theme: Arc<ThemeColors>) -> Self {
@@ -243,10 +244,12 @@ impl Render for PlaylistView {
                                 }
                                 cx.notify();
                             }))
-                            .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<gpui::Empty>, window, cx| {
+                            .on_drag(PlaylistPan, |_, _, _, cx| cx.new(|_| gpui::Empty))
+                            .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<PlaylistPan>, window, cx| {
                                 match event.event.pressed_button {
                                     Some(MouseButton::Middle) => {
                                         // view.pan = view.pan + event.event..pixel_delta(window.rem_size()).map(|length| rems(length / window.rem_size()));
+                                        println!("we do be testing");
                                     }
                                     _ => {}
                                 };
@@ -387,15 +390,18 @@ impl Render for PlaylistView {
                                             .right_0()
                                             .top_0()
                                             .h_full()
-                                            .p_4()
+                                            .min_w(gpui::Pixels::from(150.))
                                             .bg(theme.central_background)
                                             .rounded_md()
                                             .border_1()
                                             .border_color(theme.navbar_outline)
                                             .id(track_index)
                                             .overflow_y_scroll()
+                                            .line_height(DefiniteLength::Fraction(0.8))
+                                            .text_sm()
+                                            .p_1()
                                             .child(format!("Track {}", track_index + 1))
-                                            .child(div().flex().gap_4().items_center().child("Gain").child(AdjustableInput {
+                                            .child(div().text_sm().flex().gap_1().items_center().child("Gain").child(AdjustableInput {
                                                 value: 20. * track.gain.log10(),
                                                 theme: Arc::clone(&theme),
                                                 set: {
@@ -410,7 +416,7 @@ impl Render for PlaylistView {
                                                 scale: 0.01,
                                                 name: format!("Track {} gain", track_index + 1).into(),
                                                 default: 0.,
-                                            }))
+                                            }).child("dB"))
                                             .pipe(deferred)
                                     })
                                     .child(

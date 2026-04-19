@@ -16,11 +16,12 @@ use cpal::{
 use gpui::{
     AnyDrag, AnyView, App, AssetSource, Bounds, Context, DefiniteLength, Div, DivFrameState, ElementId, Empty, Entity, FocusHandle, Global, Hitbox, KeyBinding, LayoutId, List, MouseButton, PathBuilder, Pixels, Point, Rems, Rgba, SharedString, Size, Stateful, Style, StyleRefinement, Styled, TitlebarOptions, WeakEntity, Window, WindowBounds, WindowOptions, actions, canvas, deferred, div, hsla, img, linear_color_stop, linear_gradient, pattern_slash, point, prelude::*, px, rems, rgb, rgba, size
 };
+use gpui_component::{StyledExt, button};
 use gpui_platform::application;
 use itertools::Itertools;
 use tap::{Conv, Pipe, Tap};
 
-use crate::theme::default;
+use crate::theme::{default, gray};
 
 use crate::components::adjustable_input::AdjustableInput;
 use crate::theme::ThemeColors;
@@ -47,7 +48,7 @@ impl RenderOnce for Navbar {
             .flex()
             .h_10()
             .p_2()
-            .gap_2()
+            .gap_0p5()
             .flex_shrink_0()
             .rounded_md()
             .bg(linear_gradient(
@@ -62,16 +63,17 @@ impl RenderOnce for Navbar {
                     .gap_1()
                     .items_center()
                     .rounded_md()
-                    .child(img(NAVBAR_ICON).size_6())
-                    .child(div().w_px().bg(self.theme.navbar_outline).h_full())
+                    .child(img(NAVBAR_ICON).size_6().mr_1())
                     .child(
                         div()
                             .flex()
                             .gap_1()
                             .items_center()
                             .children(["File", "Edit", "View", "Help"].map(|name| div().child(name).text_sm().py_px().px_1().rounded_sm().id(name).hover(|style| style.bg(self.theme.hover)))),
-                    ),
+                    )
+                    .mr_1p5(),
             )
+            .child(div().w_px().bg(self.theme.navbar_outline).h_full())
             .child(
                 div()
                     .flex_grow()
@@ -90,7 +92,7 @@ impl RenderOnce for Navbar {
                                     .flex_shrink()
                                     .text_sm()
                                     .items_center()
-                                    .line_height(DefiniteLength::Fraction(1.))
+                                    .line_height(DefiniteLength::Fraction(0.8))
                                     .child(div().child("BPM").text_xs())
                                     .child(AdjustableInput {
                                         value: playlist_view.audio.playlist().tempo.bpm(),
@@ -125,68 +127,87 @@ impl RenderOnce for Navbar {
                                     }),
                             )
                     )
+                    .child(div().w_px().bg(self.theme.navbar_outline).h_full())
                     .child(
                         div()
                             .flex()
                             .gap_0p5()
                             .items_center()
+                            .flex_col()
+                            .flex_shrink()
                             .text_sm()
-                            .child(AdjustableInput {
-                                value: playlist_view.audio.playlist().time_signature.beats_per_measure,
-                                theme: Arc::clone(&self.theme),
-                                set: Arc::new({
-                                    let playlist = self.playlist.downgrade();
-                                    let app = self.app.downgrade();
-                                    move |beats_per_measure, cx| {
-                                        playlist
-                                            .update(cx, |playlist, cx| {
-                                                let beats_per_measure = beats_per_measure.max(1);
-                                                playlist.zoom.width = playlist.zoom.width / playlist.audio.update_beats_per_measure(|_| beats_per_measure) as f32 * beats_per_measure as f32;
-                                                cx.notify();
-                                            })
-                                            .unwrap();
-                                        cx.notify(app.entity_id());
-                                    }
-                                }),
-                                scale: 0.01,
-                                name: "Beats per measure".into(),
-                                default: 4,
-                            })
-                            .child("/")
-                            .child(AdjustableInput {
-                                value: playlist_view.audio.playlist().time_signature.beat_value,
-                                theme: Arc::clone(&self.theme),
-                                set: Arc::new({
-                                    let playlist = self.playlist.downgrade();
-                                    let app = self.app.downgrade();
-                                    move |beat_value, cx| {
-                                        playlist
-                                            .update(cx, |playlist, cx| {
-                                                playlist.audio.update_beat_value(|_| beat_value.max(1));
-                                                cx.notify();
-                                            })
-                                            .unwrap();
-                                        cx.notify(app.entity_id());
-                                    }
-                                }),
-                                scale: 0.02,
-                                name: "Beat value".into(),
-                                default: 4,
-                            }),
+                            .line_height(DefiniteLength::Fraction(0.7))
+                            .child(div().child("SIG").text_xs())
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_0p5()
+                                    .items_center()
+                                    .child(AdjustableInput {
+                                        value: playlist_view.audio.playlist().time_signature.beats_per_measure,
+                                        theme: Arc::clone(&self.theme),
+                                        set: Arc::new({
+                                            let playlist = self.playlist.downgrade();
+                                            let app = self.app.downgrade();
+                                            move |beats_per_measure, cx| {
+                                                playlist
+                                                    .update(cx, |playlist, cx| {
+                                                        let beats_per_measure = beats_per_measure.max(1);
+                                                        playlist.zoom.width = playlist.zoom.width / playlist.audio.update_beats_per_measure(|_| beats_per_measure) as f32 * beats_per_measure as f32;
+                                                        cx.notify();
+                                                    })
+                                                    .unwrap();
+                                                cx.notify(app.entity_id());
+                                            }
+                                        }),
+                                        scale: 0.01,
+                                        name: "Beats per measure".into(),
+                                        default: 4,
+                                    })
+                                    .child("/")
+                                    .child(AdjustableInput {
+                                        value: playlist_view.audio.playlist().time_signature.beat_value,
+                                        theme: Arc::clone(&self.theme),
+                                        set: Arc::new({
+                                            let playlist = self.playlist.downgrade();
+                                            let app = self.app.downgrade();
+                                            move |beat_value, cx| {
+                                                playlist
+                                                    .update(cx, |playlist, cx| {
+                                                        playlist.audio.update_beat_value(|_| beat_value.max(1));
+                                                        cx.notify();
+                                                    })
+                                                    .unwrap();
+                                                cx.notify(app.entity_id());
+                                            }
+                                        }),
+                                        scale: 0.02,
+                                        name: "Beat value".into(),
+                                        default: 4,
+                                    }),
+                            ),
                     )
-                    .child(img(PLAY_ICON).size_6().on_mouse_down(MouseButton::Left, {
-                        let playlist = self.playlist.clone();
-                        move |_, _, cx| {
-                            playlist.update(cx, |playlist, cx| {
-                                if playlist.audio.playing() {
-                                    playlist.audio.stop();
-                                } else {
-                                    playlist.audio.play();
+                    .child(div().w_px().bg(self.theme.navbar_outline).h_full())
+                    .child(
+                        div()
+                            .p_1()
+                            .debug_blue()
+                            .rounded_md()
+                            .child(img(PLAY_ICON).text_color(gpui::green()).size_6())
+                            .on_mouse_down(MouseButton::Left, {
+                                let playlist = self.playlist.clone();
+                                move |_, _, cx| {
+                                    playlist.update(cx, |playlist, cx| {
+                                        if playlist.audio.playing() {
+                                            playlist.audio.stop();
+                                        } else {
+                                            playlist.audio.play();
+                                        }
+                                        cx.notify();
+                                    });
                                 }
-                                cx.notify();
-                            });
-                        }
-                    })),
+                            })
+                    ),
             )
     }
 }
@@ -221,6 +242,7 @@ impl Render for Bpm {
                 }),
             ))
             .child(div().text_3xl().child(format!("{:.02}", playlist.audio.playlist().tempo.bpm())))
+            .child(div().text_sm().child(format!("Rounded: {}", playlist.audio.playlist().tempo.bpm().round())))
             .child(div().child("-").on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|view, _, _, cx| {
@@ -256,6 +278,26 @@ impl Render for Bpm {
                     cx.notify();
                 }),
             ))
+            .child(
+                div()
+                    .child("Use rounded")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.playlist_view.update(cx, |playlist, _| {
+                                playlist.audio.update_tempo(|tempo| Tempo::from_bpm(tempo.bpm().round()));
+                            });
+                            cx.notify();
+                        }),
+                    )
+            )
+            .child(
+                button::Button::new("testing")
+                    .label("testing")
+                    .on_click(|_, _, _| {
+                        println!("Button clicked!");
+                    })
+            )
     }
 }
 
@@ -342,7 +384,9 @@ impl Render for Volt {
                     .flex_shrink_0()
                     .p_2()
                     .items_center()
-                    .child(div().child(concat!("Volt ", env!("CARGO_PKG_VERSION")))),
+                    .text_sm()
+                    .child(div().child(concat!("Volt ", env!("CARGO_PKG_VERSION"))))
+                    .child(div().child("Highly WIP, alpha build")),
             )
     }
 }
@@ -381,10 +425,10 @@ fn main() {
             .unwrap();
         cx.bind_keys([KeyBinding::new("space", TogglePlay, None)]);
         cx.set_global(Drag(None));
-        let bounds = Bounds::centered(None, size(px(500.), px(500.0)), cx);
+        let bounds = Bounds::centered(None, size(px(1200.), px(800.0)), cx);
         cx.open_window(
             WindowOptions {
-                window_bounds: Some(WindowBounds::Maximized(bounds)),
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
                 app_id: Some("sh.thered.Volt".into()),
                 titlebar: Some(TitlebarOptions{
                     title: Some("Volt".into()),
@@ -392,7 +436,7 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |_, cx| cx.new(|cx| Volt::new(cx, Arc::new(default()))),
+            |_, cx| cx.new(|cx| Volt::new(cx, Arc::new(gray()))),
         )
         .unwrap();
         cx.activate(true);
