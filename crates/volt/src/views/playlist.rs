@@ -150,7 +150,7 @@ impl Render for PlaylistView {
                     .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<PlayheadScrub>, window, cx| {
                         let x_pos = event.event.position.x;
                         view.audio.seek(Time::Beats(
-                            view.width_to_beats(x_pos - view.bounds.left() - view.pan.x.to_pixels(window.rem_size()), window.rem_size()),
+                            view.width_to_beats((x_pos - view.bounds.left() - view.pan.x.to_pixels(window.rem_size())).max(Pixels::from(0.)), window.rem_size()),
                         ));
                         cx.notify();
                     }))
@@ -225,6 +225,8 @@ impl Render for PlaylistView {
                                     rems((position.x - (position.x - view.pan.x.to_pixels(window.rem_size())) * view.zoom.width.0 / old.width.0) / window.rem_size()),
                                     rems((position.y - (position.y - view.pan.y.to_pixels(window.rem_size())) * view.zoom.height.0 / old.height.0) / window.rem_size()),
                                 );
+                                view.pan.x.0 = view.pan.x.0.min(0.);
+                                view.pan.y.0 = view.pan.y.0.min(0.);
                                 cx.notify();
                             }))
                             .on_scroll_wheel(cx.listener(|view, event: &gpui::ScrollWheelEvent, window, cx| {
@@ -239,8 +241,12 @@ impl Render for PlaylistView {
                                         rems((position.x - (position.x - view.pan.x.to_pixels(window.rem_size())) * factor.x) / window.rem_size()),
                                         rems((position.y - (position.y - view.pan.y.to_pixels(window.rem_size())) * factor.y) / window.rem_size()),
                                     );
+                                    view.pan.x.0 = view.pan.x.0.min(0.);
+                                    view.pan.y.0 = view.pan.y.0.min(0.);
                                 } else {
                                     view.pan = view.pan + event.delta.pixel_delta(window.rem_size()).map(|length| rems(length / window.rem_size()));
+                                    view.pan.x.0 = view.pan.x.0.min(0.);
+                                    view.pan.y.0 = view.pan.y.0.min(0.);
                                 }
                                 cx.notify();
                             }))
