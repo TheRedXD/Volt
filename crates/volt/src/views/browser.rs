@@ -11,8 +11,7 @@ use std::{
 };
 
 use gpui::{
-    App, AppContext, BorrowAppContext, Context, ElementId, ExternalPaths, InteractiveElement, IntoElement, List, ListAlignment, ListState, ParentElement, Render, StatefulInteractiveElement, Styled,
-    UniformList, WeakEntity, Window, deferred, div, hash, img, list, prelude::FluentBuilder, px, uniform_list,
+    App, AppContext, BorrowAppContext, Context, ElementId, ExternalPaths, InteractiveElement, IntoElement, List, ListAlignment, ListState, ParentElement, PathBuilder, Render, StatefulInteractiveElement, Styled, UniformList, WeakEntity, Window, canvas, deferred, div, hash, img, list, point, prelude::FluentBuilder, px, uniform_list
 };
 use itertools::{Itertools, repeat_n};
 use sum_tree::{Bias, Dimension, Item, SeekTarget, SumTree, Summary};
@@ -272,7 +271,49 @@ impl Render for BrowserView {
                                         .absolute()
                                         .children(from_fn(|| Some(div().bg(theme.browser_outline).w_px().self_stretch().flex_shrink_0())).take(*depth))
                                         .pipe(|element| match data {
-                                            EntryData::Directory { open } => element.child(if open { "🔼" } else { "🔽" }),
+                                            EntryData::Directory { open } => element.child(if open {
+                                                canvas(
+                                                    move |_, _, _| {},
+                                                    {
+                                                        let value = theme.clone();
+                                                        move |bounds, _, window, _cx| {
+                                                            let mut builder = PathBuilder::fill();
+                                                            let top_left = point(bounds.left(), bounds.top());
+                                                            let top_right = point(bounds.right(), bounds.top());
+                                                            let bottom_center = point(bounds.center().x, bounds.bottom());
+                                                            builder.move_to(top_left);
+                                                            builder.line_to(top_right);
+                                                            builder.line_to(bottom_center);
+                                                            if let Ok(path) = builder.build() {
+                                                                window.paint_path(path, Arc::clone(&value).browser_folder_text);
+                                                            }
+                                                        }
+                                                    }
+                                                )
+                                                .w(px(8.))
+                                                .h(px(8.))
+                                            } else {
+                                                canvas(
+                                                    move |_, _, _| {},
+                                                    {
+                                                        let value = theme.clone();
+                                                        move |bounds, _, window, _cx| {
+                                                            let mut builder = PathBuilder::fill();
+                                                            let top_left = point(bounds.left(), bounds.top());
+                                                            let bottom_left = point(bounds.left(), bounds.bottom());
+                                                            let right_center = point(bounds.right(), bounds.center().y);
+                                                            builder.move_to(top_left);
+                                                            builder.line_to(bottom_left);
+                                                            builder.line_to(right_center);
+                                                            if let Ok(path) = builder.build() {
+                                                                window.paint_path(path, Arc::clone(&value).accent);
+                                                            }
+                                                        }
+                                                    }
+                                                )
+                                                .w(px(8.))
+                                                .h(px(8.))
+                                            }),
                                             EntryData::File => element.child(
                                                 img(
                                                     if path
