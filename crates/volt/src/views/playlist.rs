@@ -1,4 +1,4 @@
-use std::{array::from_fn, collections::HashMap, range::Range, sync::Arc};
+use std::{array::from_fn, collections::HashMap, range::Range, sync::Arc, ops::Add};
 
 use blerp::{Beats, Clip, ClipTiming, ClipTimingBeats, ClipTimingSamples, PlaylistAudio, SAMPLE_RATE, Samples, Time};
 use cpal::{
@@ -6,8 +6,9 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    AppContext, Bounds, Context, DefiniteLength, InteractiveElement, IntoElement, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div, hsla, pattern_slash, point, px, rems, size
+    AbsoluteLength, AppContext, Bounds, Context, DefiniteLength, InteractiveElement, IntoElement, Length, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div, hsla, pattern_slash, point, px, rems, size
 };
+use gpui_component::scroll::ScrollableElement;
 use itertools::Itertools;
 use tap::{Conv, Pipe, Tap};
 
@@ -179,6 +180,36 @@ impl Render for PlaylistView {
                                 self.audio.playhead().beats(tempo).u32() / self.audio.playlist().time_signature.beats_per_measure,
                                 self.audio.playhead().beats(tempo).u32() % self.audio.playlist().time_signature.beats_per_measure,
                             ))
+                            .child(
+                                div()
+                                    .absolute()
+                                    .top_px()
+                                    .child(
+                                        canvas(
+                                            move |_, _, _| {},
+                                            {
+                                                let value = theme.clone();
+                                                move |bounds, _, window, _cx| {
+                                                    let mut builder = PathBuilder::fill();
+                                                    let top_left = point(bounds.left(), bounds.top());
+                                                    let top_right = point(bounds.right(), bounds.top());
+                                                    let bottom_center = point(bounds.center().x, bounds.bottom());
+                                                    builder.move_to(top_left);
+                                                    builder.line_to(top_right);
+                                                    builder.line_to(bottom_center);
+                                                    if let Ok(path) = builder.build() {
+                                                        window.paint_path(path, Arc::clone(&value).playhead);
+                                                    }
+                                                }
+                                            }
+                                        )
+                                        .absolute()
+                                        .top(px(24.))
+                                        .left(px(-8.))
+                                        .w(px(17.))
+                                        .h(px(8.))
+                                    )
+                            )
                             .left(playhead_x),
                     )
                     .children(self.hovered_position.map(|hovered_position| {
@@ -201,19 +232,21 @@ impl Render for PlaylistView {
             .child(
                 div()
                     .flex()
+                    .flex_col()
                     .flex_grow()
-                    .overflow_hidden()
+                    .relative()
+                    .id("tracks_container")
+                    .overflow_y_scroll()
                     .child(
                         div()
                             .flex()
                             .flex_col()
                             .flex_grow()
                             .relative()
-                            .size_full()
+                            .size_auto()
                             .gap_1()
                             .id("tracks")
-                            .overflow_y_scroll()
-                            .overflow_hidden()
+                            .overflow_x_hidden()
                             .on_pinch(cx.listener(|view, event: &gpui::PinchEvent, window, cx| {
                                 let delta = event.delta;
                                 let old = view.zoom;
@@ -451,7 +484,15 @@ impl Render for PlaylistView {
                                 self.hovered_position
                                     .map(|hovered_position| div().w_px().bg(theme.playhead_hover).absolute().top_0().bottom_0().left(hovered_position.x)),
                             )
-                            .child(div().w_px().bg(theme.playhead).absolute().top_0().bottom_0().left(playhead_x))
+                            .child(
+                                div()
+                                    .w_px()
+                                    .bg(theme.playhead)
+                                    .absolute()
+                                    .top_0()
+                                    .bottom_0()
+                                    .left(playhead_x)
+                            )
                             .children(self.audio.playlist().preview.into_iter().flat_map(|preview| {
                                 let timing = preview.as_beats(tempo);
                                 [timing.start, timing.end].map(|time| {

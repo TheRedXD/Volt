@@ -95,8 +95,8 @@ pub fn gray() -> ThemeColors {
         command_palette_border: rgb(0x3c3c3c),
         command_palette_text: rgb(0x909090),
         command_palette_placeholder_text: rgba(0x90909040),
-        playhead: rgb(0xf00000),
-        playhead_hover: rgba(0xf000007f),
+        playhead: rgb(0xffffff),
+        playhead_hover: rgba(0xffffff7f),
         preview: rgb(0xf000f0),
         hover: rgba(0xffffff20),
     }

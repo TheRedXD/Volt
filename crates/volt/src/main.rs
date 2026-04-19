@@ -291,13 +291,6 @@ impl Render for Bpm {
                         }),
                     )
             )
-            .child(
-                button::Button::new("testing")
-                    .label("testing")
-                    .on_click(|_, _, _| {
-                        println!("Button clicked!");
-                    })
-            )
     }
 }
 
