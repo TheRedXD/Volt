@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="16"
+   height="16"
+   viewBox="0 0 16 16"
+   fill="none"
+   version="1.1"
+   id="svg4"
+   sodipodi:docname="plugins.svg"
+   inkscape:version="1.4.2 (ebf0e940d0, 2025-05-08)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs4" />
+  <sodipodi:namedview
+     id="namedview4"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="73.25"
+     inkscape:cx="7.9931741"
+     inkscape:cy="8"
+     inkscape:window-width="2560"
+     inkscape:window-height="1380"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg4" />
+  <path
+     d="M7.8306 3.76901L12.6304 8.56882L10.7844 10.4148C9.76487 11.4343 8.22207 11.5445 7.33845 10.6609L6.85878 10.1812L6.21818 9.54063L5.73851 9.06096C4.85489 8.17734 4.96507 6.63454 5.98459 5.61502L7.8306 3.76901Z"
+     fill="black"
+     id="path1"
+     style="fill:#ffffff;fill-opacity:1" />
+  <path
+     d="M10.9381 2.26147C11.193 2.00659 11.5787 1.97905 11.7996 2.19995C12.0205 2.42086 11.9929 2.80656 11.738 3.06144L9.43053 5.36895L8.63056 4.56898L10.9381 2.26147Z"
+     fill="black"
+     id="path2"
+     style="fill:#ffffff;fill-opacity:1" />
+  <path
+     d="M13.338 4.66137C13.5929 4.40649 13.9786 4.37895 14.1995 4.59985C14.4204 4.82076 14.3928 5.20646 14.1379 5.46134L11.8304 7.76885L11.0305 6.96888L13.338 4.66137Z"
+     fill="black"
+     id="path3"
+     style="fill:#ffffff;fill-opacity:1" />
+  <path
+     d="M2.59994 12.1995C3.21847 12.8181 4.29911 12.7409 5.01277 12.0272L6.85878 10.1812L6.21818 9.54063L4.37217 11.3866C4.06632 11.6925 3.60415 11.7255 3.33906 11.4604L2.13911 10.2605C1.96239 10.0837 1.65316 10.1058 1.44925 10.3097C1.24535 10.5136 1.22326 10.8229 1.39999 10.9996L2.59994 12.1995Z"
+     fill="black"
+     id="path4"
+     style="fill:#ffffff;fill-opacity:1" />
+</svg>
