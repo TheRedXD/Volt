@@ -1,8 +1,11 @@
 #![warn(clippy::nursery, clippy::pedantic, clippy::undocumented_unsafe_blocks, clippy::allow_attributes_without_reason)]
 // pub mod device;  // Commented out - unused legacy device implementation
-pub mod processing;
-pub mod streaming;
-pub mod read;
+mod processing;
+mod read;
+mod streaming;
+
+pub use processing::time::*;
+pub use streaming::{clip::*, track::*, playlist::*};
 
 pub mod utils {
     use std::mem::{ManuallyDrop, MaybeUninit, transmute_copy};
@@ -23,3 +26,5 @@ pub mod utils {
         unsafe { transmute_copy(&zip) }
     }
 }
+
+pub const SAMPLE_RATE: f64 = 48000.;

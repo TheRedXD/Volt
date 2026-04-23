@@ -1,312 +1,437 @@
 #![warn(clippy::pedantic, clippy::nursery, clippy::allow_attributes_without_reason, clippy::undocumented_unsafe_blocks, clippy::clone_on_ref_ptr)]
-use eframe::{App, CreationContext, NativeOptions, egui, run_native};
-use egui::{
-    Align2, Area, CentralPanel, Color32, Context, CursorIcon, FontData, FontDefinitions, FontFamily, FontId, Frame, IconData, Label, Modifiers, Popup, RichText, SidePanel, Stroke, TextStyle, TopBottomPanel, Vec2, ViewportBuilder, hex_color
-};
-use egui_extras::install_image_loaders;
-use human_panic::setup_panic;
-use image::{ImageFormat, ImageReader};
-use info::handle_args;
 use std::{
-    io::{BufReader, Cursor},
-    rc::Rc,
-    sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc::{Sender, channel}},
+    array::from_fn,
+    borrow::Cow,
+    fmt::Display,
+    ops::{DerefMut, Sub, SubAssign},
+    sync::{Arc, Mutex},
     time::Instant,
 };
-use tap::{Pipe, Tap};
-use visual::{
-    browser::Browser,
-    central::Central,
-    navbar::navbar,
-    notification::NotificationDrawer,
-    status::status,
+
+use blerp::{Beats, Playlist, PlaylistAudio, Samples, Tempo, Time};
+use cpal::{
+    default_host,
+    traits::{DeviceTrait, HostTrait},
 };
+use gpui::{
+    AnyDrag, AnyView, App, AssetSource, Bounds, Context, DefiniteLength, Div, DivFrameState, ElementId, Empty, Entity, FocusHandle, Global, Hitbox, KeyBinding, LayoutId, List, MouseButton, PathBuilder, Pixels, Point, Rems, Rgba, SharedString, Size, Stateful, Style, StyleRefinement, Styled, TitlebarOptions, WeakEntity, Window, WindowBounds, WindowOptions, actions, canvas, deferred, div, hsla, img, linear_color_stop, linear_gradient, pattern_slash, point, prelude::*, px, rems, rgb, rgba, size
+};
+use gpui_component::{StyledExt, button};
+use gpui_platform::application;
+use itertools::Itertools;
+use tap::{Conv, Pipe, Tap};
 
-use crate::visual::{dialog::dialog, icons::macros::get_icon_image, popups::{about::render_about, settings::render_settings}, theme::ThemeColors};
-use crate::visual::notification::Notification;
-use crate::visual::palette::Palette;
-use volt_waveform;
+use crate::theme::{default, gray};
 
-mod audio;
-mod info;
-mod shortcuts;
-mod timings;
-mod visual;
+use crate::components::adjustable_input::AdjustableInput;
+use crate::theme::ThemeColors;
+use crate::views::{browser::BrowserView, playlist::PlaylistView};
 
-pub struct AppSignals {
-    should_restart: AtomicBool,
-    use_glow: AtomicBool,
-    greeter: AtomicBool,
+mod components;
+mod theme;
+mod views;
+
+actions!([TogglePlay]);
+
+#[derive(IntoElement)]
+struct Navbar {
+    theme: Arc<ThemeColors>,
+    playlist: Entity<PlaylistView>,
+    app: Entity<Volt>,
 }
 
-fn load_icon() -> egui::IconData {
-    let (icon_rgba, icon_width, icon_height) = {
-        let image = image::load_from_memory(include_bytes!("./images/icons/app-icon.png"))
-            .expect("Failed to open icon path")
-            .into_rgba8();
-        
-        let (width, height) = image.dimensions();
-        let rgba = image.into_raw();
-        (rgba, width, height)
-    };
-
-    egui::IconData {
-        rgba: icon_rgba,
-        width: icon_width,
-        height: icon_height,
+// Navbar widget
+impl RenderOnce for Navbar {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let playlist_view = self.playlist.read(cx);
+        div()
+            .flex()
+            .h_10()
+            .p_2()
+            .gap_0p5()
+            .flex_shrink_0()
+            .rounded_md()
+            .bg(linear_gradient(
+                0.,
+                linear_color_stop(self.theme.navbar_background_gradient_bottom, 0.),
+                linear_color_stop(self.theme.navbar_background_gradient_top, 1.),
+            ))
+            .child(
+                div()
+                    .flex()
+                    .p_1()
+                    .gap_1()
+                    .items_center()
+                    .rounded_md()
+                    .child(img(NAVBAR_ICON).size_6().mr_1())
+                    .child(
+                        div()
+                            .flex()
+                            .gap_1()
+                            .items_center()
+                            .children(["File", "Edit", "View", "Help"].map(|name| div().child(name).text_sm().py_px().px_1().rounded_sm().id(name).hover(|style| style.bg(self.theme.hover)))),
+                    )
+                    .mr_1p5(),
+            )
+            .child(div().w_px().bg(self.theme.navbar_outline).h_full())
+            .child(
+                div()
+                    .flex_grow()
+                    .flex()
+                    .gap_2()
+                    .p_2()
+                    .rounded_md()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_shrink()
+                            .child(
+                                div()
+                                    .flex()
+                                    .flex_col()
+                                    .flex_shrink()
+                                    .text_sm()
+                                    .items_center()
+                                    .line_height(DefiniteLength::Fraction(0.8))
+                                    .child(div().child("BPM").text_xs())
+                                    .child(AdjustableInput {
+                                        value: playlist_view.audio.playlist().tempo.bpm(),
+                                        theme: Arc::clone(&self.theme),
+                                        set: {
+                                            let playlist = self.playlist.downgrade();
+                                            Arc::new(move |bpm, cx| {
+                                                playlist
+                                                    .update(cx, |playlist, cx| {
+                                                        playlist.audio.update_tempo(|_| Tempo::from_bpm(bpm));
+                                                        cx.notify();
+                                                    })
+                                                    .unwrap();
+                                            })
+                                        },
+                                        scale: 0.1,
+                                        name: "Tempo BPM".into(),
+                                        default: 120.,
+                                    })
+                                    .id("bpm")
+                                    .hoverable_tooltip({
+                                        let playlist_view = self.playlist.clone();
+                                        move |_, cx| {
+                                            let playlist_view = playlist_view.clone();
+                                            cx.new(move |_| Bpm {
+                                                playlist_view,
+                                                tap_times: [None; _],
+                                                tap_index: 0,
+                                            })
+                                            .into()
+                                        }
+                                    }),
+                            )
+                    )
+                    .child(div().w_px().bg(self.theme.navbar_outline).h_full())
+                    .child(
+                        div()
+                            .flex()
+                            .gap_0p5()
+                            .items_center()
+                            .flex_col()
+                            .flex_shrink()
+                            .text_sm()
+                            .line_height(DefiniteLength::Fraction(0.7))
+                            .child(div().child("SIG").text_xs())
+                            .child(
+                                div()
+                                    .flex()
+                                    .gap_0p5()
+                                    .items_center()
+                                    .child(AdjustableInput {
+                                        value: playlist_view.audio.playlist().time_signature.beats_per_measure,
+                                        theme: Arc::clone(&self.theme),
+                                        set: Arc::new({
+                                            let playlist = self.playlist.downgrade();
+                                            let app = self.app.downgrade();
+                                            move |beats_per_measure, cx| {
+                                                playlist
+                                                    .update(cx, |playlist, cx| {
+                                                        let beats_per_measure = beats_per_measure.max(1);
+                                                        playlist.zoom.width = playlist.zoom.width / playlist.audio.update_beats_per_measure(|_| beats_per_measure) as f32 * beats_per_measure as f32;
+                                                        cx.notify();
+                                                    })
+                                                    .unwrap();
+                                                cx.notify(app.entity_id());
+                                            }
+                                        }),
+                                        scale: 0.01,
+                                        name: "Beats per measure".into(),
+                                        default: 4,
+                                    })
+                                    .child("/")
+                                    .child(AdjustableInput {
+                                        value: playlist_view.audio.playlist().time_signature.beat_value,
+                                        theme: Arc::clone(&self.theme),
+                                        set: Arc::new({
+                                            let playlist = self.playlist.downgrade();
+                                            let app = self.app.downgrade();
+                                            move |beat_value, cx| {
+                                                playlist
+                                                    .update(cx, |playlist, cx| {
+                                                        playlist.audio.update_beat_value(|_| beat_value.max(1));
+                                                        cx.notify();
+                                                    })
+                                                    .unwrap();
+                                                cx.notify(app.entity_id());
+                                            }
+                                        }),
+                                        scale: 0.02,
+                                        name: "Beat value".into(),
+                                        default: 4,
+                                    }),
+                            ),
+                    )
+                    .child(div().w_px().bg(self.theme.navbar_outline).h_full())
+                    .child(
+                        div()
+                            .p_1()
+                            .debug_blue()
+                            .rounded_md()
+                            .child(img(PLAY_ICON).text_color(gpui::green()).size_6())
+                            .on_mouse_down(MouseButton::Left, {
+                                let playlist = self.playlist.clone();
+                                move |_, _, cx| {
+                                    playlist.update(cx, |playlist, cx| {
+                                        if playlist.audio.playing() {
+                                            playlist.audio.stop();
+                                        } else {
+                                            playlist.audio.play();
+                                        }
+                                        cx.notify();
+                                    });
+                                }
+                            })
+                    ),
+            )
     }
 }
 
-fn main() -> eframe::Result {
-    setup_panic!();
-    if handle_args().is_break() {
-        return Ok(());
+// BPM widget
+struct Bpm {
+    playlist_view: Entity<PlaylistView>,
+    tap_times: [Option<Instant>; 10],
+    tap_index: usize,
+}
+impl Render for Bpm {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let playlist = self.playlist_view.read(cx);
+        let theme = &playlist.theme;
+        div()
+            .flex_col()
+            .bg(theme.notification_background)
+            .text_color(theme.bg_text)
+            .items_center()
+            .gap_4()
+            .p_4()
+            .rounded_md()
+            .shadow_md()
+            .block_mouse_except_scroll()
+            .child(div().child("+").on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _, _, cx| {
+                    view.playlist_view.update(cx, |playlist, _| {
+                        playlist.audio.update_tempo(|tempo| Tempo::from_bpm(tempo.bpm() + 1.));
+                    });
+                    cx.notify();
+                }),
+            ))
+            .child(div().text_3xl().child(format!("{:.02}", playlist.audio.playlist().tempo.bpm())))
+            .child(div().text_sm().child(format!("Rounded: {}", playlist.audio.playlist().tempo.bpm().round())))
+            .child(div().child("-").on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _, _, cx| {
+                    view.playlist_view.update(cx, |playlist, _| {
+                        playlist.audio.update_tempo(|tempo| Tempo::from_bpm(tempo.bpm() - 1.));
+                    });
+                    cx.notify();
+                }),
+            ))
+            .child(div().child("Tap").on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _, _, cx| {
+                    view.tap_times[view.tap_index] = Some(Instant::now());
+                    view.tap_index = (view.tap_index + 1) % view.tap_times.len();
+                    let mut times = view.tap_times.iter().copied().flatten().collect_vec();
+                    let other = times.split_off(view.tap_index);
+                    if times.len() + other.len() < 2 {
+                        return;
+                    }
+                    view.playlist_view.update(cx, |playlist, _| {
+                        playlist.audio.update_tempo(|_| {
+                            Tempo::from_bpm(
+                                other
+                                    .into_iter()
+                                    .chain(times)
+                                    .tuple_windows()
+                                    .map(|(a, b)| 60. / (b - a).as_secs_f64())
+                                    .fold((0., 0.), |(sum, count), bpm| (sum + bpm, count + 1.))
+                                    .pipe(|(sum, count)| sum / count),
+                            )
+                        })
+                    });
+                    cx.notify();
+                }),
+            ))
+            .child(
+                div()
+                    .child("Use rounded")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.playlist_view.update(cx, |playlist, _| {
+                                playlist.audio.update_tempo(|tempo| Tempo::from_bpm(tempo.bpm().round()));
+                            });
+                            cx.notify();
+                        }),
+                    )
+            )
     }
-    
-    let app_signals = Arc::new(AppSignals {
-        should_restart: AtomicBool::new(false),
-        use_glow: AtomicBool::new(false),
-        greeter: AtomicBool::new(true),
-    });
-    
-    loop {
-        app_signals.should_restart.store(false, Ordering::SeqCst);
-        
-        let native_options = NativeOptions {
-            vsync: true,
-            renderer: match app_signals.use_glow.load(Ordering::SeqCst) {
-                true => eframe::Renderer::Glow,
-                false => eframe::Renderer::Wgpu,
-            },
-            wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
-                present_mode: eframe::wgpu::PresentMode::Immediate,
+}
+
+// Volt GUI app setup
+struct Drag(Option<DragInner>);
+struct DragInner {
+    start: Point<Pixels>,
+    item: AnyDrag,
+}
+impl Global for Drag {}
+struct Volt {
+    browser: Entity<BrowserView>,
+    playlist: Entity<PlaylistView>,
+    browser_size: f32,
+    theme: Arc<ThemeColors>,
+}
+impl Volt {
+    fn new(cx: &mut App, theme: Arc<ThemeColors>) -> Self {
+        Self {
+            browser: cx.new(|_| BrowserView::new(Arc::clone(&theme))),
+            playlist: cx.new(|_| PlaylistView::new(Arc::clone(&theme))),
+            browser_size: 0.3,
+            theme,
+        }
+    }
+}
+impl Render for Volt {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .size_full()
+            .bg(self.theme.central_background)
+            .text_color(self.theme.bg_text)
+            .font_family("Inter")
+            .on_action({
+                let playlist = self.playlist.clone();
+                move |_: &TogglePlay, _, cx| {
+                    playlist.update(cx, |playlist, cx| {
+                        if playlist.audio.playing() {
+                            playlist.audio.stop();
+                        } else {
+                            playlist.audio.play();
+                        }
+                        cx.notify();
+                    });
+                }
+            })
+            .child(Navbar {
+                playlist: self.playlist.clone(),
+                theme: Arc::clone(&self.theme),
+                app: cx.entity(),
+            })
+            .child(
+                div()
+                    .flex_grow()
+                    .flex()
+                    .min_h_0()
+                    .child(div().flex().flex_col().w(DefiniteLength::Fraction(self.browser_size)).child(self.browser.clone()))
+                    .child({
+                        struct Payload(Point<Pixels>, f32);
+                        div()
+                            .w_8()
+                            .px_3()
+                            .cursor_col_resize()
+                            .mx_neg_3()
+                            .flex()
+                            .flex_col()
+                            .child(div().flex_grow().bg(self.theme.browser_outline))
+                            .id("separator")
+                            .on_drag(Payload(window.mouse_position(), self.browser_size), |_, _, _, cx| cx.new(|_| Empty))
+                            .on_drag_move(cx.listener(|app, event: &gpui::DragMoveEvent<Payload>, window, cx| {
+                                app.browser_size = (event.drag(cx).1 + ((event.event.position - event.drag(cx).0).x) / window.bounds().size.width).clamp(0.1, 0.9);
+                            }))
+                            .pipe(deferred)
+                    })
+                    .child(self.playlist.clone()),
+            )
+            .child(
+                div()
+                    .flex()
+                    .h_8()
+                    .gap_4()
+                    .flex_shrink_0()
+                    .p_2()
+                    .items_center()
+                    .text_sm()
+                    .child(div().child(concat!("Volt ", env!("CARGO_PKG_VERSION"))))
+                    .child(div().child("Highly WIP, alpha build")),
+            )
+    }
+}
+
+// Main
+
+const NAVBAR_ICON: &str = "navbar-icon";
+const PLAY_ICON: &str = "play-icon";
+const FILE_OTHER_ICON: &str = "file-other-icon";
+const FILE_AUDIO_ICON: &str = "file-audio-icon";
+
+fn main() {
+    struct Assets;
+    impl AssetSource for Assets {
+        fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+            match path {
+                NAVBAR_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/navbar-icon.svg")))),
+                PLAY_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/play-icon.svg")))),
+                FILE_OTHER_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_other.svg")))),
+                FILE_AUDIO_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_audio.svg")))),
+                _ => unimplemented!(),
+            }
+        }
+
+        fn list(&self, _: &str) -> gpui::Result<Vec<SharedString>> {
+            Ok(Vec::new())
+        }
+    }
+
+    application().with_assets(Assets).run(|cx: &mut App| {
+        cx.text_system()
+            .add_fonts(vec![
+                Cow::Borrowed(include_bytes!("fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf")),
+                Cow::Borrowed(include_bytes!("fonts/inter/Inter.ttf")),
+            ])
+            .unwrap();
+        cx.bind_keys([KeyBinding::new("space", TogglePlay, None)]);
+        cx.set_global(Drag(None));
+        let bounds = Bounds::centered(None, size(px(1200.), px(800.0)), cx);
+        cx.open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                app_id: Some("sh.thered.Volt".into()),
+                titlebar: Some(TitlebarOptions{
+                    title: Some("Volt".into()),
+                    ..Default::default()
+                }),
                 ..Default::default()
             },
-            viewport: ViewportBuilder::default()
-                .with_drag_and_drop(true)
-                .with_app_id("sh.thered.Volt")
-                .with_icon(load_icon()),
-            ..Default::default()
-        };
-        
-        let result = run_native(
-            "Volt",
-            native_options,
-            Box::new(|cc| Ok(Box::new(VoltApp::new(cc, app_signals.clone())))),
-        );
-        
-        if app_signals.should_restart.load(Ordering::SeqCst) {
-            // TODO: replace with proper log
-            println!("Restarting app...");
-            continue;
-        }
-        
-        return result;
-    }
-}
-
-struct VoltApp {
-    pub browser: Browser,
-    pub central: Central,
-    pub notification_drawer: NotificationDrawer,
-    pub theme: Rc<ThemeColors>,
-    pub palette: Palette,
-    pub notifications_tx: Sender<Notification>,
-    pub app_signals: Arc<AppSignals>,
-}
-
-impl VoltApp {
-    fn new(cc: &CreationContext<'_>, app_signals: Arc<AppSignals>) -> Self {
-        const MONO_FONT_NAME: &str = "IBMPlexMono";
-        const PROP_FONT_NAME: &str = "Inter";
-        install_image_loaders(&cc.egui_ctx);
-        cc.egui_ctx.set_fonts({
-            let mut fonts = FontDefinitions::default();
-            fonts
-                .font_data
-                .insert(MONO_FONT_NAME.to_string(), FontData::from_static(include_bytes!("fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf")).into());
-            fonts.families.insert(FontFamily::Monospace, vec![MONO_FONT_NAME.to_string()]);
-            fonts
-                .font_data
-                .insert(PROP_FONT_NAME.to_string(), FontData::from_static(include_bytes!("fonts/inter/Inter.ttf")).into());
-            fonts.families.insert(FontFamily::Proportional, vec![PROP_FONT_NAME.to_string()]);
-            fonts
-        });
-        let theme = Rc::new(ThemeColors::default());
-        cc.egui_ctx.all_styles_mut(|style| {
-            const BODY_TEXT_SIZE: f32 = 12.;
-            let id = FontId::new(BODY_TEXT_SIZE, FontFamily::Proportional);
-            style.override_font_id = Some(id);
-            style.text_styles = [
-                (TextStyle::Heading, BODY_TEXT_SIZE * 1.5),
-                (TextStyle::Body, BODY_TEXT_SIZE),
-                (TextStyle::Button, BODY_TEXT_SIZE),
-                (TextStyle::Small, BODY_TEXT_SIZE * 0.8),
-                (TextStyle::Monospace, BODY_TEXT_SIZE),
-            ]
-            .map(|(text_style, size)| (text_style, FontId::new(size, FontFamily::Proportional)))
-            .into();
-            style.visuals.interact_cursor = Some(CursorIcon::PointingHand);
-            style.visuals.widgets.inactive.bg_stroke = Stroke::new(1., theme.playlist_bar);
-            style.visuals.widgets.inactive.weak_bg_fill = theme.command_palette;
-            style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, theme.playlist_bar);
-        });
-        let theme = Rc::new(ThemeColors::default());
-        Popup::open_id(&cc.egui_ctx, "welcome".into());
-        let (tx, rx) = channel();
-
-        Self {
-            browser: Browser::new(Rc::clone(&theme)),
-            central: Central::new(Rc::clone(&theme)),
-            notification_drawer: NotificationDrawer::new(rx, Rc::clone(&theme)),
-            palette: Palette::new(Rc::clone(&theme)),
-            theme,
-            notifications_tx: tx,
-            app_signals: app_signals,
-        }
-    }
-}
-
-impl App for VoltApp {
-    #[allow(clippy::too_many_lines, reason = "shut")]
-    fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
-        if ctx.input(|i| i.viewport().minimized.unwrap_or(false)) {
-            return;
-        }
-        
-        // if self.app_signals.greeter.load(Ordering::SeqCst) {
-        //     CentralPanel::default().frame(egui::Frame::default().fill(self.theme.central_background)).show(ctx, |ui| {
-        //         ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::LeftToRight), |ui| {
-        //             ui.horizontal(|ui| {
-        //                 ui.add(
-        //                     get_icon_image!("navbar-icon.svg")
-        //                         .fit_to_exact_size(Vec2::new(128., 128.))
-        //                 );
-        //                 ui.vertical(|ui| {
-        //                     ui.label("testing");
-        //                     ui.label("testing");
-        //                     ui.label("testing");
-        //                 });
-        //             });
-        //         })
-        //     });
-        //     return;
-        // }
-        
-        let time_render_start = Instant::now();
-        dialog(ctx, &self.theme, |ui| {
-            ui.label("Welcome to Volt!");
-            ui.label("This is extremely work-in-progress and is not finished at all!");
-            ui.label("If you can, please check out our GitHub repository:");
-            ui.hyperlink_to("github.com/TheRedXD/Volt", "https://github.com/TheRedXD/Volt");
-            ui.add_space(5.);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.style_mut().spacing.button_padding = Vec2 { x: 12., y: 4. };
-                ui.style_mut().visuals.widgets.hovered.weak_bg_fill = hex_color!("#ffffff10");
-                ui.style_mut().visuals.widgets.active.weak_bg_fill = hex_color!("#ffffff20");
-                if ui.add(egui::Button::new("Ok").corner_radius(10.)).on_hover_cursor(CursorIcon::PointingHand).clicked() {
-                    ui.close();
-                }
-            });
-        });
-        
-        render_about(ctx, &self.theme);
-        render_settings(ctx, &self.theme);
-        
-        TopBottomPanel::top("navbar").frame(egui::Frame::default()).show_separator_line(false).show(ctx, |ui| {
-            ui.add(navbar(&self.theme, &mut self.central));
-        });
-        TopBottomPanel::bottom("status").frame(egui::Frame::default()).show_separator_line(false).show(ctx, |ui| {
-            ui.add(status(&self.theme, &mut self.central.mode));
-        });
-
-        let browser_id = egui::Id::new("browser");
-        if ctx.memory_mut(|mem| *mem.data.get_temp_mut_or(browser_id, true)) {
-            let min_width = *self.browser.min_width.read().unwrap();
-            SidePanel::left(browser_id)
-                .min_width(min_width)
-                .default_width(300.)
-                .frame(egui::Frame::default().fill(self.theme.browser))
-                .show_separator_line(true)
-                .show(ctx, |ui| {
-                    ui.add(&mut self.browser);
-                });
-        }
-        let ctrl_b_pressed = ctx.input_mut(|i| {
-            i.consume_shortcut(&egui::KeyboardShortcut {
-                modifiers: Modifiers { ctrl: true, ..Default::default() },
-                logical_key: egui::Key::B,
-            })
-        });
-        if ctrl_b_pressed {
-            ctx.memory_mut(|mem| *mem.data.get_temp_mut_or(browser_id, true) ^= true);
-            ctx.request_repaint();
-        }
-        CentralPanel::default().frame(egui::Frame::default().fill(self.theme.central_background)).show(ctx, |ui| {
-            ui.add(&mut self.central);
-        });
-
-        Area::new("notifications_area".into())
-            .interactable(false)
-            .pivot(Align2::RIGHT_BOTTOM)
-            .fixed_pos(ctx.screen_rect().right_bottom())
-            .default_size(Vec2::ZERO)
-            .show(ctx, |ui| {
-                ui.add(&mut self.notification_drawer);
-            });
-
-        Area::new("command_palette".into())
-            .pivot(Align2::CENTER_TOP)
-            .default_pos(ctx.screen_rect().center_top())
-            .show(ctx, |ui| {
-                ui.allocate_ui(Vec2::X * ctx.screen_rect().width() * 0.5, |ui| {
-                    self.palette.ui(ui, &self.notifications_tx);
-                })
-            });
-
-        timings::set_render_time(time_render_start.elapsed());
-
-        if ctx.memory_mut(|mem| *mem.data.get_temp_mut_or_default("timings".into())) {
-            timings::show_timings(ctx, "Timings");
-        }
-        
-        if self.app_signals.should_restart.load(Ordering::SeqCst) {
-            Area::new("restart_overlay".into())
-                .fixed_pos(ctx.screen_rect().left_top())
-                .order(egui::Order::Foreground)
-                .interactable(false)
-                .show(ctx, |ui| {
-                    let screen_rect = ctx.screen_rect();
-                    ui.painter().rect_filled(screen_rect, 0.0, egui::Color32::from_black_alpha(180));
-
-                    let text = "Restarting...";
-                    let font_id = FontId::new(24.0, FontFamily::Proportional);
-                    let text_color = egui::Color32::WHITE;
-                    ui.painter().text(
-                        screen_rect.center(),
-                        Align2::CENTER_CENTER,
-                        text,
-                        font_id,
-                        text_color,
-                    );
-
-                    ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(egui::UserAttentionType::Informational));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                });
-        }
-    }
-
-    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        // Log the exit
-        println!("Volt is exiting!");
-
-        // Perform any final saves or cleanup
-        // For example, you might want to save user preferences or state
-        // self.save_state();
-
-        // Close any open connections or files
-        // self.close_connections();
-
-        // You can add more cleanup code here as needed
-    }
+            |_, cx| cx.new(|cx| Volt::new(cx, Arc::new(gray()))),
+        )
+        .unwrap();
+        cx.activate(true);
+    });
 }
