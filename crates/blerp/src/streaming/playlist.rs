@@ -138,6 +138,10 @@ impl PlaylistAudio {
                 let mut playlist = initial;
                 let mut playing = false;
                 
+                let mut clip_states: Vec<Vec<Option<(usize, Vec<f32>)>>> = playlist.tracks.iter()
+                    .map(|t| vec![None; t.clips.len()])
+                    .collect();
+                
                 loop {
                     while let Ok(message) = audio_engine_rx.try_recv() {
                         match message {
@@ -146,35 +150,82 @@ impl PlaylistAudio {
                             AudioEngineMessage::Seek(position) => {
                                 playhead.store(position.u64(), atomic::Ordering::Relaxed);
                                 next = position;
+                                
+                                for track_states in &mut clip_states {
+                                    for state in track_states {
+                                        *state = None;
+                                    }
+                                }
                                 if let Ok(mut rx) = master_rx.lock() {
                                     rx.clear();
                                 }
                             }
-                            AudioEngineMessage::Update(new) => playlist = new,
+                            AudioEngineMessage::Update(mut new) => {
+                                for (t_idx, track) in new.tracks.iter_mut().enumerate() {
+                                    if let Some(old_track) = playlist.tracks.get_mut(t_idx) {
+                                        for (c_idx, clip) in track.clips.iter_mut().enumerate() {
+                                            if let Some(old_clip) = old_track.clips.get_mut(c_idx) {
+                                                std::mem::swap(&mut clip.data, &mut old_clip.data);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                let mut new_states = Vec::new();
+                                for (t_idx, track) in new.tracks.iter().enumerate() {
+                                    let mut track_states = Vec::new();
+                                    for (c_idx, _) in track.clips.iter().enumerate() {
+                                        if t_idx < clip_states.len() && c_idx < clip_states[t_idx].len() {
+                                            track_states.push(clip_states[t_idx][c_idx].take());
+                                        } else {
+                                            track_states.push(None);
+                                        }
+                                    }
+                                    new_states.push(track_states);
+                                }
+                                clip_states = new_states;
+                                playlist = new;
+                            }
                         }
                     }
 
+                    let mut looped = false;
                     if playing && let Some(preview) = playlist.preview {
-                        playhead.update(atomic::Ordering::Relaxed, atomic::Ordering::Relaxed, |playhead| {
-                            if playhead >= preview.as_samples(playlist.tempo).end.u64() {
-                                next = preview.as_samples(playlist.tempo).start;
-                                next.u64()
+                        playhead.update(atomic::Ordering::Relaxed, atomic::Ordering::Relaxed, |p| {
+                            if p >= preview.as_samples(playlist.tempo).end.u64() {
+                                looped = true;
+                                preview.as_samples(playlist.tempo).start.u64()
                             } else {
-                                playhead
+                                p
                             }
                         });
+                    }
+
+                    if looped {
+                        if let Some(preview) = playlist.preview {
+                            next = preview.as_samples(playlist.tempo).start;
+                            for track_states in &mut clip_states {
+                                for state in track_states {
+                                    *state = None;
+                                }
+                            }
+                            if let Ok(mut rx) = master_rx.lock() {
+                                rx.clear();
+                            }
+                        }
                     }
 
                     let current_playhead = playhead.load(atomic::Ordering::Relaxed);
                     
                     if playing {
                         let buffered_frames = next.0 - current_playhead as f64;
-                        let target_buffer_frames = SAMPLE_RATE as f64 * 1.0; 
+                        let target_buffer_frames = SAMPLE_RATE as f64 * 0.2; 
+                        let min_chunk_frames = SAMPLE_RATE as f64 * 0.1;
 
-                        if buffered_frames < target_buffer_frames {
+                        if buffered_frames <= (target_buffer_frames - min_chunk_frames) {
+                            let chunk_frames = (target_buffer_frames - buffered_frames).ceil() as usize;
                             let vacant_frames = master_tx.vacant_len() / channels as usize;
-                            
-                            let chunk_frames = vacant_frames.min(SAMPLE_RATE as usize / 2);
+                            let chunk_frames = chunk_frames.min(vacant_frames);
                             
                             if chunk_frames > 0 {
                                 let block = ClipTimingSamples {
@@ -184,8 +235,8 @@ impl PlaylistAudio {
                                 };
                                 let mut buffer = vec![0.; chunk_frames * channels as usize];
                                 
-                                for track in &mut playlist.tracks {
-                                    for clip in &mut track.clips {
+                                for (t_idx, track) in playlist.tracks.iter_mut().enumerate() {
+                                    for (c_idx, clip) in track.clips.iter_mut().enumerate() {
                                         let ClipTimingSamples { start, end, offset } = clip.timing.as_samples(playlist.tempo);
                                         let intersection = start.usize().max(block.start.usize())..end.usize().min(block.end.usize());
                                         if intersection.is_empty() {
@@ -210,31 +261,53 @@ impl PlaylistAudio {
                                                 if source.start as u64 >= data.decoder.codec_params().n_frames.unwrap_or(u64::MAX) {
                                                     continue;
                                                 }
-    
-                                                let SeekedTo { required_ts, actual_ts, .. } = match data.reader.format_reader.seek(
-                                                    SeekMode::Accurate,
-                                                    SeekTo::Time {
-                                                        time: SymphoniaTime::from(source.start as f64 / SAMPLE_RATE),
-                                                        track_id: data.reader.format_reader.tracks()[data.track].id.into(),
-                                                    },
-                                                ) {
-                                                    Ok(res) => res,
-                                                    Err(e) => {
-                                                        eprintln!("Seek error: {e}");
-                                                        continue;
+
+                                                let state = &mut clip_states[t_idx][c_idx];
+                                                let mut requires_seek = true;
+                                                let mut leftovers = Vec::new();
+
+                                                if let Some((expected_start, saved_leftovers)) = state {
+                                                    if *expected_start == source.start {
+                                                        requires_seek = false;
+                                                        leftovers = std::mem::take(saved_leftovers);
                                                     }
-                                                };
+                                                }
 
-                                                data.decoder.reset();
+                                                let mut skip_frames = 0;
+                                                if requires_seek {
+                                                    let SeekedTo { required_ts, actual_ts, .. } = match data.reader.format_reader.seek(
+                                                        SeekMode::Accurate,
+                                                        SeekTo::Time {
+                                                            time: SymphoniaTime::from(source.start as f64 / SAMPLE_RATE),
+                                                            track_id: data.reader.format_reader.tracks()[data.track].id.into(),
+                                                        },
+                                                    ) {
+                                                        Ok(res) => res,
+                                                        Err(e) => {
+                                                            eprintln!("Seek error: {e}");
+                                                            continue;
+                                                        }
+                                                    };
 
-                                                let time_base = data.decoder.codec_params().time_base.unwrap();
-                                                let error_secs = time_base.calc_time(required_ts.saturating_sub(actual_ts)).conv::<Duration>().as_secs_f64();
+                                                    data.decoder.reset();
+                                                    let time_base = data.decoder.codec_params().time_base.unwrap();
+                                                    let error_secs = time_base.calc_time(required_ts.saturating_sub(actual_ts)).conv::<Duration>().as_secs_f64();
+                                                    skip_frames = (error_secs * SAMPLE_RATE).round() as usize;
+                                                    leftovers.clear();
+                                                }
                                                 
-                                                let mut skip_frames = (error_secs * SAMPLE_RATE).round() as usize;
                                                 let mut needed = source.end - source.start;
                                                 let mut decoded = Vec::<f32>::with_capacity(needed);
                                                 
+                                                let take_leftovers = needed.min(leftovers.len());
+                                                decoded.extend(leftovers.drain(0..take_leftovers));
+                                                needed -= take_leftovers;
+                                                
                                                 loop {
+                                                    if needed == 0 {
+                                                        break;
+                                                    }
+
                                                     let packet = match data.reader.format_reader.next_packet() {
                                                         Ok(packet) => packet,
                                                         Err(SymphoniaError::IoError(error)) if error.kind() == io::ErrorKind::UnexpectedEof => break,
@@ -257,20 +330,24 @@ impl PlaylistAudio {
                                                     let to_skip = skip_frames.min(chan.len());
                                                     skip_frames -= to_skip;
                                                     
-                                                    let take_len = needed.min(chan.len() - to_skip);
+                                                    let available = chan.len() - to_skip;
+                                                    let take_len = needed.min(available);
+                                                    
                                                     decoded.extend(chan.iter().skip(to_skip).take(take_len));
                                                     needed -= take_len;
                                                     
-                                                    if needed == 0 {
-                                                        break;
+                                                    if available > take_len {
+                                                        leftovers.extend(chan.iter().skip(to_skip + take_len));
                                                     }
                                                 }
 
-                                                for (buffer, data) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&decoded) {
+                                                for (buffer, decoded_sample) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&decoded) {
                                                     for sample in buffer {
-                                                        *sample = (*data).mul_add(track.gain, *sample);
+                                                        *sample = (*decoded_sample).mul_add(track.gain, *sample);
                                                     }
                                                 }
+                                                
+                                                *state = Some((source.start + decoded.len(), leftovers));
                                             }
                                         }
                                     }
