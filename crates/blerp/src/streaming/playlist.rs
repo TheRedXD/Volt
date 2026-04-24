@@ -48,19 +48,20 @@ pub struct Playlist {
 pub struct PlaylistOutput {
     audio_engine: JoinHandle<()>,
     audio_engine_tx: Sender<AudioEngineMessage>,
-    stream: cpal::Stream,
+    stream: cpal::Stream, 
     playing: bool,
+    stream_playing: Arc<atomic::AtomicBool>,
 }
 
 impl PlaylistOutput {
     fn play(&mut self) {
-        self.stream.play().unwrap();
+        self.stream_playing.store(true, atomic::Ordering::Relaxed);
         self.audio_engine_tx.send(AudioEngineMessage::Play).unwrap();
         self.playing = true;
     }
 
     fn stop(&mut self) {
-        self.stream.pause().unwrap();
+        self.stream_playing.store(false, atomic::Ordering::Relaxed);
         self.audio_engine_tx.send(AudioEngineMessage::Stop).unwrap();
         self.playing = false;
     }
@@ -91,6 +92,7 @@ impl PlaylistAudio {
     pub fn device_out(&mut self, device: &cpal::Device, config: &cpal::StreamConfig) -> &mut PlaylistOutput {
         let (mut master_tx, mut master_rx) = HeapRb::new(2048*1024).split();
         let master_rx = Arc::new(Mutex::new(master_rx));
+        let stream_playing = Arc::new(atomic::AtomicBool::new(false));
         
         let stream = device
             .build_output_stream(
@@ -99,11 +101,17 @@ impl PlaylistAudio {
                     let playhead = Arc::clone(&self.playhead);
                     let channels = config.channels;
                     let master_rx = Arc::clone(&master_rx);
+                    let stream_playing = Arc::clone(&stream_playing);
+                    
                     move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                        if let Ok(mut rx) = master_rx.try_lock() {
-                            let popped = rx.pop_slice(data) as u64;
-                            playhead.fetch_add(popped / u64::from(channels), atomic::Ordering::Relaxed);
-                            data[popped as usize..].fill(0.0);
+                        if stream_playing.load(atomic::Ordering::Relaxed) {
+                            if let Ok(mut rx) = master_rx.try_lock() {
+                                let popped = rx.pop_slice(data) as u64;
+                                playhead.fetch_add(popped / u64::from(channels), atomic::Ordering::Relaxed);
+                                data[popped as usize..].fill(0.0);
+                            } else {
+                                data.fill(0.0);
+                            }
                         } else {
                             data.fill(0.0);
                         }
@@ -115,27 +123,26 @@ impl PlaylistAudio {
                 None,
             )
             .unwrap();
-        stream.pause().unwrap();
+            
+        stream.play().unwrap();
+
         let (audio_engine_tx, audio_engine_rx) = crossbeam_channel::unbounded();
         let audio_engine = {
             let playhead = Arc::clone(&self.playhead);
             let channels = config.channels;
             let initial = self.playlist.clone();
             let master_rx = Arc::clone(&master_rx);
+            
             spawn(move || {
-                const AHEAD: Samples = Samples(1024.);
                 let mut next: Samples = Samples::default();
                 let mut playlist = initial;
                 let mut playing = false;
+                
                 loop {
-                    if let Ok(message) = audio_engine_rx.try_recv() {
+                    while let Ok(message) = audio_engine_rx.try_recv() {
                         match message {
-                            AudioEngineMessage::Play => {
-                                playing = true;
-                            }
-                            AudioEngineMessage::Stop => {
-                                playing = false;
-                            }
+                            AudioEngineMessage::Play => playing = true,
+                            AudioEngineMessage::Stop => playing = false,
                             AudioEngineMessage::Seek(position) => {
                                 playhead.store(position.u64(), atomic::Ordering::Relaxed);
                                 next = position;
@@ -143,11 +150,10 @@ impl PlaylistAudio {
                                     rx.clear();
                                 }
                             }
-                            AudioEngineMessage::Update(new) => {
-                                playlist = new;
-                            }
+                            AudioEngineMessage::Update(new) => playlist = new,
                         }
                     }
+
                     if playing && let Some(preview) = playlist.preview {
                         playhead.update(atomic::Ordering::Relaxed, atomic::Ordering::Relaxed, |playhead| {
                             if playhead >= preview.as_samples(playlist.tempo).end.u64() {
@@ -158,20 +164,26 @@ impl PlaylistAudio {
                             }
                         });
                     }
-                    let playhead = playhead.load(atomic::Ordering::Relaxed);
+
+                    let current_playhead = playhead.load(atomic::Ordering::Relaxed);
+                    
                     if playing {
-                        match (next.0 - playhead as f64).partial_cmp(&AHEAD.0).unwrap() {
-                            cmp::Ordering::Less => {
-                                let vacant = master_tx.vacant_len() as f64;
-                                if vacant != 0. {
-                                    println!("{}", vacant);
-                                }
+                        let buffered_frames = next.0 - current_playhead as f64;
+                        let target_buffer_frames = SAMPLE_RATE as f64 * 1.0; 
+
+                        if buffered_frames < target_buffer_frames {
+                            let vacant_frames = master_tx.vacant_len() / channels as usize;
+                            
+                            let chunk_frames = vacant_frames.min(SAMPLE_RATE as usize / 2);
+                            
+                            if chunk_frames > 0 {
                                 let block = ClipTimingSamples {
                                     start: next,
-                                    end: next + Samples(vacant),
+                                    end: next + Samples(chunk_frames as f64),
                                     offset: Samples(0.),
                                 };
-                                let mut buffer = vec![0.; vacant as usize];
+                                let mut buffer = vec![0.; chunk_frames * channels as usize];
+                                
                                 for track in &mut playlist.tracks {
                                     for clip in &mut track.clips {
                                         let ClipTimingSamples { start, end, offset } = clip.timing.as_samples(playlist.tempo);
@@ -183,54 +195,77 @@ impl PlaylistAudio {
                                         let destination = destination..destination + intersection.len();
                                         let source = intersection.start + offset.usize() - start.usize();
                                         let source = Range::from(source..source + intersection.len());
-                                        println!("{} {}", source.start, match &mut clip.data { ClipData::Audio(AudioClipData { data }) => data.len(), _ => 0 });
+                                        
                                         match &mut clip.data {
                                             ClipData::Audio(AudioClipData { data }) => {
-                                                if source.start >= data.len() {
-                                                    continue;
-                                                }
-                                                let source = source.start..source.end.clamp(0, data.len());
-                                                for (buffer, data) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&data[source]) {
+                                                if source.start >= data.len() { continue; }
+                                                let source_range = source.start..source.end.clamp(0, data.len());
+                                                for (buffer, data) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&data[source_range]) {
                                                     for sample in buffer {
                                                         *sample = (*data).mul_add(track.gain, *sample);
                                                     }
                                                 }
                                             }
                                             ClipData::Symphonia(data) => {
-                                                if source.start as u64 >= data.decoder.codec_params().n_frames.unwrap() {
+                                                if source.start as u64 >= data.decoder.codec_params().n_frames.unwrap_or(u64::MAX) {
                                                     continue;
                                                 }
     
-                                                let SeekedTo { required_ts, actual_ts, .. } = data
-                                                    .reader
-                                                    .format_reader
-                                                    .seek(
-                                                        SeekMode::Accurate,
-                                                        SeekTo::Time {
-                                                            time: SymphoniaTime::from(source.start as f64 / SAMPLE_RATE),
-                                                            track_id: data.reader.format_reader.tracks()[data.track].id.into(),
-                                                        },
-                                                    )
-                                                    .unwrap();
-                                                let error = data.decoder.codec_params().time_base.unwrap().calc_time(required_ts - actual_ts).conv::<Duration>().as_secs_f64() * SAMPLE_RATE;
-                                                let mut decoded = Vec::<f32>::with_capacity(source.end - source.start);
+                                                let SeekedTo { required_ts, actual_ts, .. } = match data.reader.format_reader.seek(
+                                                    SeekMode::Accurate,
+                                                    SeekTo::Time {
+                                                        time: SymphoniaTime::from(source.start as f64 / SAMPLE_RATE),
+                                                        track_id: data.reader.format_reader.tracks()[data.track].id.into(),
+                                                    },
+                                                ) {
+                                                    Ok(res) => res,
+                                                    Err(e) => {
+                                                        eprintln!("Seek error: {e}");
+                                                        continue;
+                                                    }
+                                                };
+
+                                                data.decoder.reset();
+
+                                                let time_base = data.decoder.codec_params().time_base.unwrap();
+                                                let error_secs = time_base.calc_time(required_ts.saturating_sub(actual_ts)).conv::<Duration>().as_secs_f64();
+                                                
+                                                let mut skip_frames = (error_secs * SAMPLE_RATE).round() as usize;
+                                                let mut needed = source.end - source.start;
+                                                let mut decoded = Vec::<f32>::with_capacity(needed);
+                                                
                                                 loop {
                                                     let packet = match data.reader.format_reader.next_packet() {
                                                         Ok(packet) => packet,
                                                         Err(SymphoniaError::IoError(error)) if error.kind() == io::ErrorKind::UnexpectedEof => break,
-                                                        Err(error) => {
-                                                            panic!("{}", error);
-                                                        }
+                                                        Err(_) => break,
                                                     };
-                                                    let source = data.decoder.decode(&packet).unwrap();
-                                                    let mut destination = source.make_equivalent::<f32>();
-                                                    source.convert(&mut destination);
-                                                    let len = decoded.spare_capacity_mut().len();
-                                                    decoded.extend(destination.chan(0).iter().skip(error.round() as usize).take(len));
-                                                    if len == 0 {
+
+                                                    let source_audio = match data.decoder.decode(&packet) {
+                                                        Ok(audio) => audio,
+                                                        Err(SymphoniaError::DecodeError(_)) => {
+                                                            data.decoder.reset();
+                                                            continue;
+                                                        }
+                                                        Err(_) => break,
+                                                    };
+
+                                                    let mut dest_buf = source_audio.make_equivalent::<f32>();
+                                                    source_audio.convert(&mut dest_buf);
+                                                    
+                                                    let chan = dest_buf.chan(0);
+                                                    let to_skip = skip_frames.min(chan.len());
+                                                    skip_frames -= to_skip;
+                                                    
+                                                    let take_len = needed.min(chan.len() - to_skip);
+                                                    decoded.extend(chan.iter().skip(to_skip).take(take_len));
+                                                    needed -= take_len;
+                                                    
+                                                    if needed == 0 {
                                                         break;
                                                     }
                                                 }
+
                                                 for (buffer, data) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&decoded) {
                                                     for sample in buffer {
                                                         *sample = (*data).mul_add(track.gain, *sample);
@@ -241,12 +276,15 @@ impl PlaylistAudio {
                                     }
                                 }
                                 master_tx.push_slice(&buffer);
-                                next += Samples(vacant / f64::from(channels));
-                            }
-                            cmp::Ordering::Greater | cmp::Ordering::Equal => {
+                                next += Samples(chunk_frames as f64);
+                            } else {
                                 sleep(Duration::from_millis(1));
                             }
+                        } else {
+                            sleep(Duration::from_millis(1));
                         }
+                    } else {
+                        sleep(Duration::from_millis(1));
                     }
                 }
             })
@@ -256,6 +294,7 @@ impl PlaylistAudio {
             audio_engine_tx,
             stream,
             playing: false,
+            stream_playing,
         })
     }
 
