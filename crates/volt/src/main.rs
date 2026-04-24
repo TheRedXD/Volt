@@ -193,7 +193,7 @@ impl RenderOnce for Navbar {
                             .p_1()
                             .debug_blue()
                             .rounded_md()
-                            .child(img(PLAY_ICON).text_color(gpui::green()).size_6())
+                            .child(img(PLAY_ICON).text_color(gpui::green()).size_4())
                             .on_mouse_down(MouseButton::Left, {
                                 let playlist = self.playlist.clone();
                                 move |_, _, cx| {

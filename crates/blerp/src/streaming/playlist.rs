@@ -6,8 +6,7 @@ use std::{
     path::Path,
     range::Range,
     sync::{
-        Arc,
-        atomic::{self, AtomicU64},
+        Arc, Mutex, atomic::{self, AtomicU64}
     },
     thread::{JoinHandle, sleep, spawn},
     time::Duration,
@@ -91,16 +90,23 @@ impl PlaylistAudio {
 
     pub fn device_out(&mut self, device: &cpal::Device, config: &cpal::StreamConfig) -> &mut PlaylistOutput {
         let (mut master_tx, mut master_rx) = HeapRb::new(2048*1024).split();
-
+        let master_rx = Arc::new(Mutex::new(master_rx));
+        
         let stream = device
             .build_output_stream(
                 config,
                 {
                     let playhead = Arc::clone(&self.playhead);
                     let channels = config.channels;
+                    let master_rx = Arc::clone(&master_rx);
                     move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                        let popped = master_rx.pop_slice(data) as u64;
-                        playhead.fetch_add(popped / u64::from(channels), atomic::Ordering::Relaxed);
+                        if let Ok(mut rx) = master_rx.try_lock() {
+                            let popped = rx.pop_slice(data) as u64;
+                            playhead.fetch_add(popped / u64::from(channels), atomic::Ordering::Relaxed);
+                            data[popped as usize..].fill(0.0);
+                        } else {
+                            data.fill(0.0);
+                        }
                     }
                 },
                 move |err| {
@@ -115,6 +121,7 @@ impl PlaylistAudio {
             let playhead = Arc::clone(&self.playhead);
             let channels = config.channels;
             let initial = self.playlist.clone();
+            let master_rx = Arc::clone(&master_rx);
             spawn(move || {
                 const AHEAD: Samples = Samples(1024.);
                 let mut next: Samples = Samples::default();
@@ -132,6 +139,9 @@ impl PlaylistAudio {
                             AudioEngineMessage::Seek(position) => {
                                 playhead.store(position.u64(), atomic::Ordering::Relaxed);
                                 next = position;
+                                if let Ok(mut rx) = master_rx.lock() {
+                                    rx.clear();
+                                }
                             }
                             AudioEngineMessage::Update(new) => {
                                 playlist = new;

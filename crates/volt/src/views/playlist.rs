@@ -138,6 +138,13 @@ impl Render for PlaylistView {
                         }
                         cx.notify();
                     }))
+                    .on_click(cx.listener(|view, event: &gpui::ClickEvent, window, cx| {
+                        let x_pos = event.position().x;
+                        view.audio.seek(Time::Beats(
+                            view.width_to_beats((x_pos - view.bounds.left() - view.pan.x.to_pixels(window.rem_size())).max(Pixels::from(0.)), window.rem_size()),
+                        ));
+                        cx.notify();
+                    }))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|view, _: &gpui::MouseDownEvent, window, cx| {
