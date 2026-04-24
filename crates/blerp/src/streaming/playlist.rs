@@ -90,7 +90,7 @@ impl PlaylistAudio {
     }
 
     pub fn device_out(&mut self, device: &cpal::Device, config: &cpal::StreamConfig) -> &mut PlaylistOutput {
-        let (mut master_tx, mut master_rx) = HeapRb::new(2048*1024).split();
+        let (mut master_tx, master_rx) = HeapRb::new(2048*1024).split();
         let master_rx = Arc::new(Mutex::new(master_rx));
         let stream_playing = Arc::new(atomic::AtomicBool::new(false));
         
