@@ -44,6 +44,7 @@ pub struct Playlist {
     pub time_signature: TimeSignature,
     pub tempo: Tempo,
     pub preview: Option<ClipTiming>,
+    pub metronome: bool
 }
 
 pub struct PlaylistOutput {
@@ -773,6 +774,7 @@ impl Playlist {
             time_signature: TimeSignature::default(),
             tempo: Tempo::default(),
             preview: None,
+            metronome: false
         }
     }
 

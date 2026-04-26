@@ -320,20 +320,26 @@ struct Volt {
     playlist: Entity<PlaylistView>,
     browser_size: f32,
     theme: Arc<ThemeColors>,
+    focus_handle: FocusHandle,
 }
 impl Volt {
-    fn new(cx: &mut App, theme: Arc<ThemeColors>) -> Self {
+    fn new(window: &mut Window, cx: &mut App, theme: Arc<ThemeColors>) -> Self {
+        let focus_handle = cx.focus_handle();
+        focus_handle.focus(window, cx);
+        
         Self {
             browser: cx.new(|_| BrowserView::new(Arc::clone(&theme))),
             playlist: cx.new(|_| PlaylistView::new(Arc::clone(&theme))),
             browser_size: 0.3,
             theme,
+            focus_handle
         }
     }
 }
 impl Render for Volt {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .track_focus(&self.focus_handle)
             .flex()
             .flex_col()
             .size_full()
@@ -443,7 +449,7 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |_, cx| cx.new(|cx| Volt::new(cx, Arc::new(gray()))),
+            |window, cx| cx.new(|cx| Volt::new(window, cx, Arc::new(gray()))),
         )
         .unwrap();
         cx.activate(true);

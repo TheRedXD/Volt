@@ -199,6 +199,13 @@ impl Render for PlaylistView {
         let playhead_absolute_x = self.beats_to_width(playhead_beats);
 
         let view_width_rems = self.bounds.size.width.as_f32() / rem_size.as_f32();
+        
+        let culling_view_width_rems = if self.bounds.size.width.as_f32() == 0.0 {
+            10000.0
+        } else {
+            view_width_rems
+        };
+
         let half_screen_rems = view_width_rems / 2.0;
         
         if self.auto_scroll && self.audio.playing() {
@@ -253,6 +260,7 @@ impl Render for PlaylistView {
             .flex_grow()
             .relative()
             .overflow_hidden()
+            .ml_6()
             .child(
                 canvas(|_, _, _| {}, {
                     let view = cx.entity().downgrade();
@@ -695,13 +703,18 @@ impl Render for PlaylistView {
                                         cx.notify();
                                     }))
                                     .on_drag(TimeSelectionDrag(track_index), |_, _, _, cx| cx.new(|_| gpui::Empty))
-                                    .children(track.clips().iter().map(|clip| {
+                                    .children(track.clips().iter().filter_map(|clip| {
                                         let beats = clip.timing.as_beats(tempo);
                                         let start = self.beats_to_width(beats.start) + self.pan.x;
                                         let length = self.beats_to_width(beats.len());
+                                        
+                                        if start.0 + length.0 < 0.0 || start.0 > culling_view_width_rems {
+                                            return None;
+                                        }
+
                                         let is_selected = self.selected_clips.contains(&clip.id);
                                         
-                                        div()
+                                        Some(div()
                                             .absolute()
                                             .left(start)
                                             .top_0()
@@ -835,6 +848,8 @@ impl Render for PlaylistView {
                                                                     return;
                                                                 }
 
+                                                                let step = window_size / (MIPMAP_HIGH << level) as f64;
+
                                                                 for (c, channel_levels) in channels_waveforms.iter().enumerate() {
                                                                     let waveform = channel_levels.get(level).unwrap();
                                                                     let center_y = clip_bounds.top() + channel_height * c as f32 + channel_height / 2.0;
@@ -850,13 +865,13 @@ impl Render for PlaylistView {
                                                                         .fold(
                                                                             from_fn(|i| {
                                                                                 let mut b = PathBuilder::stroke(px(2.));
-                                                                                let start_range = waveform.get((start_x_usize as f64 * window_size / (MIPMAP_HIGH << level) as f64) as usize).copied().unwrap_or_default();
+                                                                                let start_range = waveform.get((start_x_usize as f64 * step) as usize).copied().unwrap_or_default();
                                                                                 let start_y = if i == 0 { start_range.start } else { start_range.end };
                                                                                 b.move_to(point(start_x_usize.conv::<Pixels>() + clip_left, center_y + channel_height / 2. * start_y));
                                                                                 b
                                                                             }),
                                                                             |mut builders:[_; 2], x| {
-                                                                                let range = waveform.get((x as f64 * window_size / (MIPMAP_HIGH << level) as f64) as usize).copied().unwrap_or_default();
+                                                                                let range = waveform.get((x as f64 * step) as usize).copied().unwrap_or_default();
                                                                                 builders[0].line_to(point(x.conv::<Pixels>() + clip_left, center_y + channel_height / 2. * range.start));
                                                                                 builders[1].line_to(point(x.conv::<Pixels>() + clip_left, center_y + channel_height / 2. * range.end));
                                                                                 builders
@@ -915,7 +930,7 @@ impl Render for PlaylistView {
                                                         view.resizing_clip_start = None;
                                                     }))
                                                     .on_drag(ClipResizeRight { clip_id: clip.id, initial_timing: clip.timing }, |_, _, _, cx| cx.new(|_| gpui::Empty)),
-                                            )
+                                            ))
                                     }))
                                     .child({
                                         div()

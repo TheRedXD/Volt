@@ -194,6 +194,7 @@ impl Render for BrowserView {
                                         .gap_4()
                                         .items_center()
                                         .id(index)
+                                        .text_sm()
                                         .text_color(theme.browser_folder_text)
                                         .hover(|style| style.text_color(theme.browser_folder_hover_text))
                                         .when(matches!(data, EntryData::Directory { .. }) && path.read_dir().is_err(), |element| element.cursor_not_allowed())
