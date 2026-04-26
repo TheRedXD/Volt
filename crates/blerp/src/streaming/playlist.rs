@@ -1,5 +1,6 @@
 use std::{
     cmp,
+    collections::HashMap,
     f64::consts::TAU,
     fs::File,
     io,
@@ -39,7 +40,7 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Playlist {
-    tracks: Vec<Track>,
+    pub tracks: Vec<Track>,
     pub time_signature: TimeSignature,
     pub tempo: Tempo,
     pub preview: Option<ClipTiming>,
@@ -47,7 +48,7 @@ pub struct Playlist {
 
 pub struct PlaylistOutput {
     audio_engine: JoinHandle<()>,
-    audio_engine_tx: Sender<AudioEngineMessage>,
+    pub audio_engine_tx: Sender<AudioEngineMessage>,
     stream: cpal::Stream, 
     playing: bool,
     stream_playing: Arc<atomic::AtomicBool>,
@@ -67,11 +68,16 @@ impl PlaylistOutput {
     }
 }
 
-enum AudioEngineMessage {
+pub enum AudioEngineMessage {
     Play,
     Stop,
     Seek(Samples),
     Update(Playlist),
+    UpdateTimings(HashMap<usize, ClipTiming>),
+    DeleteClips(Vec<usize>),
+    UpdateTempo(Tempo),
+    UpdateTimeSignature(TimeSignature),
+    UpdateTrackGain(usize, f32),
 }
 
 pub struct PlaylistAudio {
@@ -103,7 +109,7 @@ impl PlaylistAudio {
                     let master_rx = Arc::clone(&master_rx);
                     let stream_playing = Arc::clone(&stream_playing);
                     
-                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    move |data: &mut[f32], _: &cpal::OutputCallbackInfo| {
                         if stream_playing.load(atomic::Ordering::Relaxed) {
                             if let Ok(mut rx) = master_rx.try_lock() {
                                 let popped = rx.pop_slice(data) as u64;
@@ -160,11 +166,43 @@ impl PlaylistAudio {
                                     rx.clear();
                                 }
                             }
+                            AudioEngineMessage::UpdateTimings(timings) => {
+                                for track in &mut playlist.tracks {
+                                    for clip in &mut track.clips {
+                                        if let Some(timing) = timings.get(&clip.id) {
+                                            clip.timing = *timing;
+                                        }
+                                    }
+                                }
+                            }
+                            AudioEngineMessage::DeleteClips(ids) => {
+                                for (t_idx, track) in playlist.tracks.iter_mut().enumerate() {
+                                    let mut c_idx = 0;
+                                    track.clips.retain(|c| {
+                                        let keep = !ids.contains(&c.id);
+                                        if !keep {
+                                            if t_idx < clip_states.len() && c_idx < clip_states[t_idx].len() {
+                                                clip_states[t_idx].remove(c_idx);
+                                            }
+                                        } else {
+                                            c_idx += 1;
+                                        }
+                                        keep
+                                    });
+                                }
+                            }
+                            AudioEngineMessage::UpdateTempo(tempo) => playlist.tempo = tempo,
+                            AudioEngineMessage::UpdateTimeSignature(ts) => playlist.time_signature = ts,
+                            AudioEngineMessage::UpdateTrackGain(track, gain) => {
+                                if let Some(t) = playlist.tracks.get_mut(track) {
+                                    t.gain = gain;
+                                }
+                            }
                             AudioEngineMessage::Update(mut new) => {
-                                for (t_idx, track) in new.tracks.iter_mut().enumerate() {
-                                    if let Some(old_track) = playlist.tracks.get_mut(t_idx) {
-                                        for (c_idx, clip) in track.clips.iter_mut().enumerate() {
-                                            if let Some(old_clip) = old_track.clips.get_mut(c_idx) {
+                                for track in new.tracks.iter_mut() {
+                                    for clip in track.clips.iter_mut() {
+                                        if let Some(old_track) = playlist.tracks.iter_mut().find(|t| t.clips.iter().any(|c| c.id == clip.id)) {
+                                            if let Some(old_clip) = old_track.clips.iter_mut().find(|c| c.id == clip.id) {
                                                 std::mem::swap(&mut clip.data, &mut old_clip.data);
                                             }
                                         }
@@ -172,14 +210,18 @@ impl PlaylistAudio {
                                 }
 
                                 let mut new_states = Vec::new();
-                                for (t_idx, track) in new.tracks.iter().enumerate() {
+                                for track in new.tracks.iter() {
                                     let mut track_states = Vec::new();
-                                    for (c_idx, _) in track.clips.iter().enumerate() {
-                                        if t_idx < clip_states.len() && c_idx < clip_states[t_idx].len() {
-                                            track_states.push(clip_states[t_idx][c_idx].take());
-                                        } else {
-                                            track_states.push(None);
+                                    for clip in track.clips.iter() {
+                                        let mut found_state = None;
+                                        for (t_idx, old_track) in playlist.tracks.iter().enumerate() {
+                                            if let Some(c_idx) = old_track.clips.iter().position(|c| c.id == clip.id) {
+                                                if t_idx < clip_states.len() && c_idx < clip_states[t_idx].len() {
+                                                    found_state = clip_states[t_idx][c_idx].take();
+                                                }
+                                            }
                                         }
+                                        track_states.push(found_state);
                                     }
                                     new_states.push(track_states);
                                 }
@@ -248,12 +290,21 @@ impl PlaylistAudio {
                                         let source = Range::from(source..source + intersection.len());
                                         
                                         match &mut clip.data {
-                                            ClipData::Audio(AudioClipData { data }) => {
-                                                if source.start >= data.len() { continue; }
-                                                let source_range = source.start..source.end.clamp(0, data.len());
-                                                for (buffer, data) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&data[source_range]) {
-                                                    for sample in buffer {
-                                                        *sample = (*data).mul_add(track.gain, *sample);
+                                            ClipData::Audio(AudioClipData { data, channels: in_channels }) => {
+                                                let in_channels = *in_channels;
+                                                let max_frames = data.len() / in_channels;
+                                                if source.start >= max_frames { continue; }
+                                                let source_range = source.start..source.end.clamp(0, max_frames);
+                                                let out_channels = channels as usize;
+                                                let dest_start = destination.start * out_channels;
+                                                let mut dest_idx = dest_start;
+                                                for frame in source_range {
+                                                    for c in 0..out_channels {
+                                                        let src_c = if c < in_channels { c } else { 0 };
+                                                        if dest_idx < buffer.len() {
+                                                            buffer[dest_idx] = data[frame * in_channels + src_c].mul_add(track.gain, buffer[dest_idx]);
+                                                        }
+                                                        dest_idx += 1;
                                                     }
                                                 }
                                             }
@@ -296,15 +347,16 @@ impl PlaylistAudio {
                                                     leftovers.clear();
                                                 }
                                                 
-                                                let mut needed = source.end - source.start;
-                                                let mut decoded = Vec::<f32>::with_capacity(needed);
+                                                let mut needed_frames = source.end - source.start;
+                                                let out_channels = channels as usize;
+                                                let mut decoded = Vec::<f32>::with_capacity(needed_frames * out_channels);
                                                 
-                                                let take_leftovers = needed.min(leftovers.len());
-                                                decoded.extend(leftovers.drain(0..take_leftovers));
-                                                needed -= take_leftovers;
+                                                let take_leftovers_frames = needed_frames.min(leftovers.len() / out_channels);
+                                                decoded.extend(leftovers.drain(0..take_leftovers_frames * out_channels));
+                                                needed_frames -= take_leftovers_frames;
                                                 
                                                 loop {
-                                                    if needed == 0 {
+                                                    if needed_frames == 0 {
                                                         break;
                                                     }
 
@@ -313,6 +365,10 @@ impl PlaylistAudio {
                                                         Err(SymphoniaError::IoError(error)) if error.kind() == io::ErrorKind::UnexpectedEof => break,
                                                         Err(_) => break,
                                                     };
+                                                    
+                                                    if packet.track_id() != data.reader.format_reader.tracks()[data.track].id {
+                                                        continue;
+                                                    }
 
                                                     let source_audio = match data.decoder.decode(&packet) {
                                                         Ok(audio) => audio,
@@ -326,28 +382,40 @@ impl PlaylistAudio {
                                                     let mut dest_buf = source_audio.make_equivalent::<f32>();
                                                     source_audio.convert(&mut dest_buf);
                                                     
-                                                    let chan = dest_buf.chan(0);
-                                                    let to_skip = skip_frames.min(chan.len());
-                                                    skip_frames -= to_skip;
+                                                    let dest_frames = dest_buf.frames();
+                                                    let to_skip_frames = skip_frames.min(dest_frames);
+                                                    skip_frames -= to_skip_frames;
                                                     
-                                                    let available = chan.len() - to_skip;
-                                                    let take_len = needed.min(available);
+                                                    let available_frames = dest_frames - to_skip_frames;
+                                                    let take_frames = needed_frames.min(available_frames);
                                                     
-                                                    decoded.extend(chan.iter().skip(to_skip).take(take_len));
-                                                    needed -= take_len;
+                                                    let in_channels = dest_buf.spec().channels.count();
                                                     
-                                                    if available > take_len {
-                                                        leftovers.extend(chan.iter().skip(to_skip + take_len));
+                                                    for i in to_skip_frames..(to_skip_frames + take_frames) {
+                                                        for c in 0..out_channels {
+                                                            let src_c = if c < in_channels { c } else { 0 };
+                                                            decoded.push(dest_buf.chan(src_c)[i]);
+                                                        }
+                                                    }
+                                                    needed_frames -= take_frames;
+                                                    
+                                                    if available_frames > take_frames {
+                                                        for i in (to_skip_frames + take_frames)..dest_frames {
+                                                            for c in 0..out_channels {
+                                                                let src_c = if c < in_channels { c } else { 0 };
+                                                                leftovers.push(dest_buf.chan(src_c)[i]);
+                                                            }
+                                                        }
                                                     }
                                                 }
 
-                                                for (buffer, decoded_sample) in buffer.chunks_exact_mut(channels as usize).skip(destination.start).take(destination.len()).zip(&decoded) {
-                                                    for sample in buffer {
-                                                        *sample = (*decoded_sample).mul_add(track.gain, *sample);
-                                                    }
+                                                let dest_start = destination.start * out_channels;
+                                                let dest_len = destination.len() * out_channels;
+                                                for (buffer_sample, decoded_sample) in buffer[dest_start..dest_start + dest_len].iter_mut().zip(&decoded) {
+                                                    *buffer_sample = (*decoded_sample).mul_add(track.gain, *buffer_sample);
                                                 }
                                                 
-                                                *state = Some((source.start + decoded.len(), leftovers));
+                                                *state = Some((source.start + decoded.len() / out_channels, leftovers));
                                             }
                                         }
                                     }
@@ -412,23 +480,238 @@ impl PlaylistAudio {
         }
     }
 
+    pub fn move_clips(&mut self, positions: HashMap<usize, (usize, ClipTiming)>) {
+        let mut to_move = Vec::new();
+        for track in &mut self.playlist.tracks {
+            let mut i = 0;
+            while i < track.clips.len() {
+                if let Some(&(new_track, new_timing)) = positions.get(&track.clips[i].id) {
+                    let mut clip = track.clips.remove(i);
+                    clip.timing = new_timing;
+                    to_move.push((new_track, clip));
+                } else {
+                    i += 1;
+                }
+            }
+        }
+        for (new_track_idx, clip) in to_move {
+            let dest = new_track_idx.min(self.playlist.tracks.len().saturating_sub(1));
+            self.playlist.tracks[dest].clips.push(clip);
+        }
+        
+        if let Some(out) = &self.out {
+            out.audio_engine_tx.send(AudioEngineMessage::Update(self.playlist.clone())).unwrap();
+        }
+    }
+    
+    pub fn update_clip_timings(&mut self, timings: HashMap<usize, ClipTiming>) {
+        for track in &mut self.playlist.tracks {
+            for clip in &mut track.clips {
+                if let Some(timing) = timings.get(&clip.id) {
+                    clip.timing = *timing;
+                }
+            }
+        }
+        if let Some(out) = &self.out {
+            out.audio_engine_tx.send(AudioEngineMessage::UpdateTimings(timings)).unwrap();
+        }
+    }
+
+    pub fn delete_clips(&mut self, ids: &[usize]) {
+        let ids_vec = ids.to_vec();
+        for track in &mut self.playlist.tracks {
+            track.clips.retain(|c| !ids.contains(&c.id));
+        }
+        if let Some(out) = &self.out {
+            out.audio_engine_tx.send(AudioEngineMessage::DeleteClips(ids_vec)).unwrap();
+        }
+    }
+
+    pub fn duplicate_clips(&mut self, ids: &[usize]) -> Vec<usize> {
+        let mut new_clips = Vec::new();
+        let mut new_ids = Vec::new();
+        
+        let mut min_start = f64::MAX;
+        let mut max_end = 0.0;
+        for track in &self.playlist.tracks {
+            for clip in &track.clips {
+                if ids.contains(&clip.id) {
+                    let start = clip.timing.as_beats(self.playlist.tempo).start.f64();
+                    let end = clip.timing.as_beats(self.playlist.tempo).end.f64();
+                    if start < min_start { min_start = start; }
+                    if end > max_end { max_end = end; }
+                }
+            }
+        }
+        
+        let length = max_end - min_start;
+        if length <= 0.0 { return new_ids; }
+    
+        for (t_idx, track) in self.playlist.tracks.iter().enumerate() {
+            for clip in &track.clips {
+                if ids.contains(&clip.id) {
+                    let mut new_clip = clip.clone_with_new_id();
+                    let timing = clip.timing.as_beats(self.playlist.tempo);
+                    new_clip.timing = ClipTiming::Beats(ClipTimingBeats {
+                        start: Beats::new(timing.start.f64() + length),
+                        end: Beats::new(timing.end.f64() + length),
+                        offset: timing.offset,
+                    });
+                    new_ids.push(new_clip.id);
+                    new_clips.push((t_idx, new_clip));
+                }
+            }
+        }
+    
+        if !new_clips.is_empty() {
+            for (t_idx, clip) in new_clips {
+                self.playlist.tracks[t_idx].clips.push(clip);
+            }
+            if let Some(out) = &self.out {
+                out.audio_engine_tx.send(AudioEngineMessage::Update(self.playlist.clone())).unwrap();
+            }
+        }
+        
+        new_ids
+    }
+
+    pub fn delete_time_selection(&mut self, track_range: std::ops::RangeInclusive<usize>, time_range: std::ops::Range<f64>) {
+        let start = Beats::new(time_range.start);
+        let end = Beats::new(time_range.end);
+        let mut to_delete = Vec::new();
+        let mut new_clips = Vec::new();
+        let mut timings_to_update = HashMap::new();
+    
+        for t_idx in track_range {
+            if let Some(track) = self.playlist.tracks.get(t_idx) {
+                for clip in &track.clips {
+                    let timing = clip.timing.as_beats(self.playlist.tempo);
+                    if timing.start.f64() >= start.f64() && timing.end.f64() <= end.f64() {
+                        to_delete.push(clip.id);
+                    } else if timing.start.f64() < start.f64() && timing.end.f64() > end.f64() {
+                        timings_to_update.insert(clip.id, ClipTiming::Beats(ClipTimingBeats {
+                            start: timing.start,
+                            end: start,
+                            offset: timing.offset,
+                        }));
+                        let new_clip_offset = timing.offset.f64() + (end.f64() - timing.start.f64());
+                        let mut new_clip = clip.clone_with_new_id();
+                        new_clip.timing = ClipTiming::Beats(ClipTimingBeats {
+                            start: end,
+                            end: timing.end,
+                            offset: Beats::new(new_clip_offset),
+                        });
+                        new_clips.push((t_idx, new_clip));
+                    } else if timing.start.f64() >= start.f64() && timing.start.f64() < end.f64() {
+                        let new_start = end;
+                        let new_offset = timing.offset.f64() + (end.f64() - timing.start.f64());
+                        timings_to_update.insert(clip.id, ClipTiming::Beats(ClipTimingBeats {
+                            start: new_start,
+                            end: timing.end,
+                            offset: Beats::new(new_offset),
+                        }));
+                    } else if timing.end.f64() > start.f64() && timing.end.f64() <= end.f64() {
+                        timings_to_update.insert(clip.id, ClipTiming::Beats(ClipTimingBeats {
+                            start: timing.start,
+                            end: start,
+                            offset: timing.offset,
+                        }));
+                    }
+                }
+            }
+        }
+    
+        if !to_delete.is_empty() {
+            self.delete_clips(&to_delete);
+        }
+        if !timings_to_update.is_empty() {
+            self.update_clip_timings(timings_to_update);
+        }
+        if !new_clips.is_empty() {
+            for (t_idx, clip) in new_clips {
+                self.playlist.tracks[t_idx].clips.push(clip);
+            }
+            if let Some(out) = &self.out {
+                out.audio_engine_tx.send(AudioEngineMessage::Update(self.playlist.clone())).unwrap();
+            }
+        }
+    }
+    
+    pub fn duplicate_time_selection(&mut self, track_range: std::ops::RangeInclusive<usize>, time_range: std::ops::Range<f64>) {
+        let start = Beats::new(time_range.start);
+        let end = Beats::new(time_range.end);
+        let length = end.f64() - start.f64();
+        let mut new_clips = Vec::new();
+    
+        for t_idx in track_range {
+            if let Some(track) = self.playlist.tracks.get(t_idx) {
+                for clip in &track.clips {
+                    let timing = clip.timing.as_beats(self.playlist.tempo);
+                    
+                    let clip_start = timing.start.f64().max(start.f64());
+                    let clip_end = timing.end.f64().min(end.f64());
+                    
+                    if clip_start < clip_end {
+                        let mut new_clip = clip.clone_with_new_id();
+                        let offset_add = clip_start - timing.start.f64();
+                        
+                        new_clip.timing = ClipTiming::Beats(ClipTimingBeats {
+                            start: Beats::new(clip_start + length),
+                            end: Beats::new(clip_end + length),
+                            offset: Beats::new(timing.offset.f64() + offset_add),
+                        });
+                        new_clips.push((t_idx, new_clip));
+                    }
+                }
+            }
+        }
+    
+        if !new_clips.is_empty() {
+            for (t_idx, clip) in new_clips {
+                self.playlist.tracks[t_idx].clips.push(clip);
+            }
+            if let Some(out) = &self.out {
+                out.audio_engine_tx.send(AudioEngineMessage::Update(self.playlist.clone())).unwrap();
+            }
+        }
+    }
+
+    pub fn update_track_gain(&mut self, track: usize, gain: f32) {
+        self.playlist.set_track_gain(track, gain);
+        if let Some(out) = &self.out {
+            out.audio_engine_tx.send(AudioEngineMessage::UpdateTrackGain(track, gain)).unwrap();
+        }
+    }
+
     /// Update the tempo of the playlist and return the previous tempo.
     /// `update` receives the current tempo and should return the new tempo.
     pub fn update_tempo(&mut self, update: impl FnOnce(Tempo) -> Tempo) -> Tempo {
         let old = self.playlist.tempo;
-        self.update_playlist(|playlist| playlist.tempo = update(playlist.tempo));
+        let new = update(old);
+        self.playlist.tempo = new;
+        if let Some(out) = &self.out {
+            out.audio_engine_tx.send(AudioEngineMessage::UpdateTempo(new)).unwrap();
+        }
         old
     }
 
     pub fn update_beats_per_measure(&mut self, update: impl FnOnce(u32) -> u32) -> u32 {
         let old = self.playlist.time_signature.beats_per_measure;
-        self.update_playlist(|playlist| playlist.time_signature.beats_per_measure = update(playlist.time_signature.beats_per_measure));
+        let new = update(old);
+        self.playlist.time_signature.beats_per_measure = new;
+        if let Some(out) = &self.out {
+            out.audio_engine_tx.send(AudioEngineMessage::UpdateTimeSignature(self.playlist.time_signature)).unwrap();
+        }
         old
     }
 
     pub fn update_beat_value(&mut self, update: impl FnOnce(u32) -> u32) -> u32 {
         let old = self.playlist.time_signature.beat_value;
-        self.update_playlist(|playlist| playlist.time_signature.beat_value = update(playlist.time_signature.beat_value));
+        let new = update(old);
+        self.playlist.time_signature.beat_value = new;
+        if let Some(out) = &self.out {
+            out.audio_engine_tx.send(AudioEngineMessage::UpdateTimeSignature(self.playlist.time_signature)).unwrap();
+        }
         old
     }
 }
@@ -439,9 +722,10 @@ impl Playlist {
         Self {
             tracks: {
                 let data = Arc::from(
-                    (0..SAMPLE_RATE as u32)
+                    (0..SAMPLE_RATE as u32 * 2)
                         .map(|index| {
-                            let time = f64::from(index) / SAMPLE_RATE;
+                            let frame = index / 2;
+                            let time = f64::from(frame) / SAMPLE_RATE;
                             ((TAU * 440.0 * time).sin() * (-time * 4.).exp()) as f32
                         })
                         .collect::<Vec<_>>()
@@ -451,34 +735,37 @@ impl Playlist {
                 vec![
                     Track {
                         clips: vec![
-                            Clip {
-                                data: ClipData::Audio(AudioClipData { data: Arc::clone(&data) }),
-                                timing: ClipTiming::Beats(ClipTimingBeats {
+                            Clip::new(
+                                "Sine 1".to_string(),
+                                ClipData::Audio(AudioClipData { data: Arc::clone(&data), channels: 2 }),
+                                ClipTiming::Beats(ClipTimingBeats {
                                     start: Beats(0.),
                                     end: Beats(1.),
                                     offset: Beats(0.),
-                                }),
-                            },
-                            Clip {
-                                data: ClipData::Audio(AudioClipData { data: Arc::clone(&data) }),
-                                timing: ClipTiming::Beats(ClipTimingBeats {
+                                })
+                            ),
+                            Clip::new(
+                                "Sine 2".to_string(),
+                                ClipData::Audio(AudioClipData { data: Arc::clone(&data), channels: 2 }),
+                                ClipTiming::Beats(ClipTimingBeats {
                                     start: Beats(2.),
                                     end: Beats(3.),
                                     offset: Beats(0.),
-                                }),
-                            },
+                                })
+                            ),
                         ],
                         gain: 1.,
                     },
                     Track {
-                        clips: vec![Clip {
-                            data: ClipData::Audio(AudioClipData { data: Arc::clone(&data) }),
-                            timing: ClipTiming::Beats(ClipTimingBeats {
+                        clips: vec![Clip::new(
+                            "Sine 3".to_string(),
+                            ClipData::Audio(AudioClipData { data: Arc::clone(&data), channels: 2 }),
+                            ClipTiming::Beats(ClipTimingBeats {
                                 start: Beats(2.5),
                                 end: Beats(3.5),
                                 offset: Beats(0.),
-                            }),
-                        }],
+                            })
+                        )],
                         gain: 1.,
                     },
                 ]
@@ -494,11 +781,14 @@ impl Playlist {
     }
 
     pub fn add_clips(&mut self, track: usize, path: Arc<Path>, start: Time) {
-        let clips = SymphoniaClipData::from_path(path);
+        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let clips = SymphoniaClipData::from_path(Arc::clone(&path));
         self.tracks.resize((track + clips.len()).max(self.tracks.len()), Track { clips: Vec::new(), gain: 1. });
         for (track, clip) in self.tracks.iter_mut().skip(track).zip(clips) {
-            track.clips.push(Clip {
-                timing: ClipTiming::Samples(ClipTimingSamples {
+            track.clips.push(Clip::new(
+                name.clone(),
+                ClipData::Symphonia(clip.clone()),
+                ClipTiming::Samples(ClipTimingSamples {
                     start: start.samples(self.tempo),
                     end: start.samples(self.tempo)
                         + Samples(
@@ -513,8 +803,7 @@ impl Playlist {
                         ),
                     offset: Samples(0.),
                 }),
-                data: ClipData::Symphonia(clip),
-            });
+            ));
         }
     }
 

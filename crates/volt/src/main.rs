@@ -1,3 +1,4 @@
+#![allow(warnings)]
 #![warn(clippy::pedantic, clippy::nursery, clippy::allow_attributes_without_reason, clippy::undocumented_unsafe_blocks, clippy::clone_on_ref_ptr)]
 use std::{
     array::from_fn,
@@ -191,8 +192,21 @@ impl RenderOnce for Navbar {
                     .child(
                         div()
                             .p_1()
-                            .debug_blue()
                             .rounded_md()
+                            .bg(
+                                {
+                                    let mut color = Default::default();
+                                    let playlist = self.playlist.clone();
+                                    playlist.update(cx, |playlist, cx| {
+                                        if playlist.audio.playing() {
+                                            color = rgba(0xffffff20);
+                                        } else {
+                                            color = rgba(0xffffff00);
+                                        }
+                                    });
+                                    color
+                                }
+                            )
                             .child(img(PLAY_ICON).text_color(gpui::green()).size_4())
                             .on_mouse_down(MouseButton::Left, {
                                 let playlist = self.playlist.clone();

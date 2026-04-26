@@ -1,4 +1,5 @@
 use std::{fs::File, io, path::Path, range::Range, sync::Arc};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use itertools::{Itertools, MinMaxResult};
 use symphonia::{
@@ -18,6 +19,8 @@ use crate::{
     read::Reader,
 };
 
+pub(crate) static NEXT_CLIP_ID: AtomicUsize = AtomicUsize::new(1);
+
 #[derive(Clone)]
 pub enum ClipData {
     Audio(AudioClipData),
@@ -27,6 +30,7 @@ pub enum ClipData {
 #[derive(Clone)]
 pub struct AudioClipData {
     pub(crate) data: Arc<[f32]>,
+    pub channels: usize,
 }
 
 pub struct SymphoniaClipData {
@@ -54,7 +58,8 @@ impl SymphoniaClipData {
             let path = Arc::clone(&path);
             move || Reader::new(File::open(&path).unwrap()).unwrap()
         };
-        (0..reader().format_reader.tracks().len()).map(move |index| {
+        let len = reader().format_reader.tracks().len();
+        (0..len).map(move |index| {
             let reader = reader();
             Self {
                 path: Arc::clone(&path),
@@ -68,19 +73,39 @@ impl SymphoniaClipData {
 
 #[derive(Clone)]
 pub struct Clip {
+    pub id: usize,
+    pub name: String,
     pub(crate) data: ClipData,
     pub timing: ClipTiming,
 }
 
 impl Clip {
-    pub fn data_len(&self) -> Time {
-        match &self.data {
-            ClipData::Audio(AudioClipData { data }) => Time::Samples(Samples(data.len() as f64)),
-            ClipData::Symphonia(SymphoniaClipData { decoder, .. }) => Time::Samples(Samples(decoder.codec_params().n_frames.unwrap() as f64)),
+    pub fn new(name: String, data: ClipData, timing: ClipTiming) -> Self {
+        Self {
+            id: NEXT_CLIP_ID.fetch_add(1, Ordering::Relaxed),
+            name,
+            data,
+            timing,
         }
     }
 
-    pub fn base_minmax_mipmap(&mut self, tempo: Tempo, samples_per_chunk: usize) -> Vec<Range<f32>> {
+    pub fn clone_with_new_id(&self) -> Self {
+        Self {
+            id: NEXT_CLIP_ID.fetch_add(1, Ordering::Relaxed),
+            name: self.name.clone(),
+            data: self.data.clone(),
+            timing: self.timing,
+        }
+    }
+
+    pub fn data_len(&self) -> Time {
+        match &self.data {
+            ClipData::Audio(AudioClipData { data, channels }) => Time::Samples(Samples((data.len() / channels) as f64)),
+            ClipData::Symphonia(SymphoniaClipData { decoder, .. }) => Time::Samples(Samples(decoder.codec_params().n_frames.unwrap_or(0) as f64)),
+        }
+    }
+
+    pub fn base_minmax_mipmap(&mut self, tempo: Tempo, samples_per_chunk: usize) -> Vec<Vec<Range<f32>>> {
         let chunks = self.data_len().samples(tempo).usize() / samples_per_chunk;
         let from_minmax = |minmax, default| {
             Range::from(match minmax {
@@ -89,19 +114,38 @@ impl Clip {
                 MinMaxResult::MinMax(min, max) => min..max,
             })
         };
-        let from_samples = |data: &[f32]| {
-            (0..chunks)
-                .map(|x| {
-                    let x = x as f64;
-                    let start = x * samples_per_chunk as f64;
-                    let end = start + samples_per_chunk as f64;
-                    let range = Range::from((start as usize).min(data.len() - 1)..(end as usize).min(data.len() - 1));
-                    from_minmax(data[range].iter().copied().minmax(), data[range.start])
-                })
-                .collect()
-        };
+
         match &mut self.data {
-            ClipData::Audio(AudioClipData { data }) => from_samples(data),
+            ClipData::Audio(AudioClipData { data, channels }) => {
+                let channels = *channels;
+                (0..channels).map(|c| {
+                    (0..chunks)
+                        .map(|x| {
+                            let start_frame = x * samples_per_chunk;
+                            let end_frame = start_frame + samples_per_chunk;
+                            let mut min = f32::MAX;
+                            let mut max = f32::MIN;
+                            let mut count = 0;
+                            for frame in start_frame..end_frame {
+                                let idx = frame * channels + c;
+                                if idx < data.len() {
+                                    let val = data[idx];
+                                    if val < min { min = val; }
+                                    if val > max { max = val; }
+                                    count += 1;
+                                }
+                            }
+                            if count == 0 {
+                                let def_idx = start_frame * channels + c;
+                                let default = if def_idx < data.len() { data[def_idx] } else { 0.0 };
+                                from_minmax(MinMaxResult::NoElements, default)
+                            } else {
+                                from_minmax(MinMaxResult::MinMax(min, max), 0.0)
+                            }
+                        })
+                        .collect()
+                }).collect()
+            },
             ClipData::Symphonia(SymphoniaClipData { track, reader, decoder, .. }) => {
                 reader
                     .format_reader
@@ -113,21 +157,43 @@ impl Clip {
                         },
                     )
                     .unwrap();
-                let mut data = Vec::<f32>::with_capacity(decoder.codec_params().n_frames.unwrap() as usize);
+                let mut channel_data = vec![Vec::new(); decoder.codec_params().channels.map_or(1, |c| c.count())];
                 loop {
                     let packet = match reader.format_reader.next_packet() {
                         Ok(packet) => packet,
                         Err(SymphoniaError::IoError(error)) if error.kind() == io::ErrorKind::UnexpectedEof => break,
-                        Err(error) => {
-                            panic!("{}", error);
-                        }
+                        Err(error) => panic!("{}", error)
                     };
-                    let source = decoder.decode(&packet).unwrap();
+                    if packet.track_id() != reader.format_reader.tracks()[*track].id {
+                        continue;
+                    }
+                    let source = match decoder.decode(&packet) {
+                        Ok(audio) => audio,
+                        Err(_) => continue,
+                    };
                     let mut destination = source.make_equivalent::<f32>();
                     source.convert(&mut destination);
-                    data.extend(destination.chan(0).iter().copied());
+                    for c in 0..destination.spec().channels.count() {
+                        if c < channel_data.len() {
+                            channel_data[c].extend(destination.chan(c).iter().copied());
+                        }
+                    }
                 }
-                from_samples(&data)
+                channel_data.into_iter().map(|data| {
+                    (0..chunks)
+                        .map(|x| {
+                            let start = x * samples_per_chunk;
+                            let end = start + samples_per_chunk;
+                            let range = start.min(data.len().saturating_sub(1))..end.min(data.len().saturating_sub(1));
+                            if range.is_empty() {
+                                let default = *data.get(range.start).unwrap_or(&0.0);
+                                from_minmax(MinMaxResult::NoElements, default)
+                            } else {
+                                from_minmax(data[range.clone()].iter().copied().minmax(), 0.0)
+                            }
+                        })
+                        .collect()
+                }).collect()
             }
         }
     }
