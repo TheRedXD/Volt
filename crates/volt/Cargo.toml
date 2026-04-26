@@ -30,6 +30,7 @@ gpui = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] 
 gpui-component = { git = "https://github.com/longbridge/gpui-component" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
 sum_tree = { git = "https://github.com/zed-industries/zed" }
+anyhow = { workspace = true }
 
 # TEMPORARY FIX: Fix some platform support
 [target.'cfg(target_os = "linux")'.dependencies]
