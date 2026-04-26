@@ -1,4 +1,4 @@
-use std::ops::{Add, AddAssign, Sub};
+use std::{cmp::Ordering, ops::{Add, AddAssign}};
 
 use crate::SAMPLE_RATE;
 
@@ -14,6 +14,7 @@ impl Default for Tempo {
 }
 
 impl Tempo {
+    #[must_use]
     pub fn from_bpm(bpm: f64) -> Self {
         #[allow(clippy::cast_sign_loss, reason = "bpm is always positive")]
         #[allow(clippy::cast_possible_truncation, reason = "bpm only goes up to 999.99, so never truncates")]
@@ -21,10 +22,12 @@ impl Tempo {
         Self { beats_per_hectominute }
     }
 
+    #[must_use]
     pub fn bpm(self) -> f64 {
         f64::from(self.beats_per_hectominute) / 100.
     }
 
+    #[must_use]
     pub fn bps(self) -> f64 {
         self.bpm() / 60.
     }
@@ -36,10 +39,11 @@ pub struct Beats(pub(crate) f64);
 impl Beats {
     /// Create a `Beats` from a number of beats.
     #[must_use]
-    pub fn new(beats: f64) -> Self {
+    pub const fn new(beats: f64) -> Self {
         Self(beats)
     }
 
+    #[must_use]
     pub fn from_u32(beats: u32) -> Self {
         Self(f64::from(beats))
     }
@@ -49,14 +53,20 @@ impl Beats {
         self.0
     }
 
-    pub fn f32(self) -> f32 {
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation, reason = "beats are unlikely to be that large")]
+    pub const fn f32(self) -> f32 {
         self.0 as f32
     }
 
-    pub fn u32(self) -> u32 {
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation, reason = "beats are unlikely to be that large")]
+    #[allow(clippy::cast_sign_loss, reason = "sign loss is intentional when converting to u32")]
+    pub const fn u32(self) -> u32 {
         self.0 as u32
     }
 
+    #[must_use]
     pub fn samples(self, tempo: Tempo) -> Samples {
         Samples::new(self.0 / tempo.bps() * SAMPLE_RATE)
     }
@@ -86,36 +96,45 @@ impl PartialEq for Samples {
 impl Eq for Samples {}
 
 impl PartialOrd for Samples {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        (self.0).partial_cmp(&other.0)
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for Samples {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.partial_cmp(&other.0).unwrap()
     }
 }
 
 impl Samples {
+    #[must_use]
     pub const fn new(samples: f64) -> Self {
         Self(samples)
     }
 
-    pub fn f64(self) -> f64 {
+    #[must_use]
+    pub const fn f64(self) -> f64 {
         self.0
     }
 
-    pub fn u64(self) -> u64 {
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation, reason = "samples are unlikely to be that large")]
+    #[allow(clippy::cast_sign_loss, reason = "sign loss is intentional when converting to u64")]
+    pub const fn u64(self) -> u64 {
         self.0 as u64
     }
 
-    pub fn usize(self) -> usize {
+    #[must_use]
+    #[allow(clippy::cast_possible_truncation, reason = "samples are unlikely to be that large")]
+    #[allow(clippy::cast_sign_loss, reason = "sign loss is intentional when converting to usize")]
+    pub const fn usize(self) -> usize {
         self.0 as usize
     }
 
+    #[must_use]
     pub fn beats(self, tempo: Tempo) -> Beats {
-        Beats::new(self.0 / SAMPLE_RATE as f64 * tempo.bps())
+        Beats::new(self.0 / SAMPLE_RATE * tempo.bps())
     }
 }
 
@@ -129,7 +148,7 @@ impl Add for Samples {
 
 impl AddAssign for Samples {
     fn add_assign(&mut self, rhs: Self) {
-        self.0 += rhs.0
+        self.0 += rhs.0;
     }
 }
 
@@ -140,6 +159,7 @@ pub enum Time {
 }
 
 impl Time {
+    #[must_use]
     pub fn beats(self, tempo: Tempo) -> Beats {
         match self {
             Self::Beats(beats) => beats,
@@ -147,6 +167,7 @@ impl Time {
         }
     }
 
+    #[must_use]
     pub fn samples(self, tempo: Tempo) -> Samples {
         match self {
             Self::Beats(beats) => beats.samples(tempo),

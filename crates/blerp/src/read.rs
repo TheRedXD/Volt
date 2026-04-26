@@ -1,26 +1,13 @@
-use std::{
-    cell::RefCell,
-    iter::{IntoIterator, Iterator, from_fn},
-    num::NonZeroUsize,
-    rc::Rc,
-    time::Duration,
-};
-
-use itertools::Itertools;
 use symphonia::{
     core::{
-        audio::{AudioBuffer, Channels},
-        codecs::{CodecParameters, Decoder, DecoderOptions},
-        errors::{Error as SymphoniaError, Result as SymphoniaResult},
-        formats::{FormatOptions, FormatReader, Track},
+        errors::Result as SymphoniaResult,
+        formats::{FormatOptions, FormatReader},
         io::{MediaSource, MediaSourceStream, MediaSourceStreamOptions},
         meta::MetadataOptions,
         probe::Hint,
-        units::Time,
     },
-    default::{get_codecs, get_probe},
+    default::get_probe,
 };
-use tap::{Pipe, Tap};
 
 pub struct Reader {
     pub format_reader: Box<dyn FormatReader>,
@@ -44,13 +31,5 @@ impl Reader {
             )?
             .format;
         Ok(Self { format_reader })
-    }
-
-    pub fn read(&mut self, decoder: &mut dyn Decoder) -> SymphoniaResult<AudioBuffer<f64>> {
-        let packet = self.format_reader.next_packet().unwrap();
-        let source = decoder.decode(&packet).unwrap();
-        let mut destination = source.make_equivalent::<f64>();
-        source.convert(&mut destination);
-        Ok(destination)
     }
 }

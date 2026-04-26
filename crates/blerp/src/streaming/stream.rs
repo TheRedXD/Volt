@@ -71,7 +71,7 @@ pub struct AudioStream {
     // Control channels
     command_rx: Receiver<StreamCommand>,
     _command_tx: Sender<StreamCommand>, // Keep sender alive
-    
+
     // Finish channels
     _finish_command_rx: Receiver<StreamCommand>, // Keep receiver alive
     finish_command_tx: Sender<StreamCommand>,
@@ -115,7 +115,7 @@ impl AudioStream {
             command_rx,
             _command_tx: command_tx.clone(),
             _finish_command_rx: finish_command_rx.clone(),
-            finish_command_tx: finish_command_tx,
+            finish_command_tx,
             state: Arc::new(Mutex::new(StreamState::Stopped)),
             is_running: Arc::new(AtomicBool::new(false)),
             volume: Arc::new(Mutex::new(1.0)),

@@ -1,13 +1,12 @@
 use std::{
-    cmp,
     collections::HashMap,
     f64::consts::TAU,
-    fs::File,
     io,
     path::Path,
     range::Range,
     sync::{
-        Arc, Mutex, atomic::{self, AtomicU64}
+        Arc, Mutex,
+        atomic::{self, AtomicU64},
     },
     thread::{JoinHandle, sleep, spawn},
     time::Duration,
@@ -15,23 +14,22 @@ use std::{
 
 use cpal::traits::{DeviceTrait, StreamTrait};
 use crossbeam_channel::Sender;
-use itertools::Itertools;
 use ringbuf::{
-    HeapProd, HeapRb,
+    HeapRb,
     traits::{Consumer, Observer, Producer, Split},
 };
 use symphonia::core::{
     audio::Signal,
-    errors::Error as SymphoniaError,
+    errors::{Error as SymphoniaError, Result as SymphoniaResult},
     formats::{SeekMode, SeekTo, SeekedTo},
     units::Time as SymphoniaTime,
 };
-use tap::Conv;
+use tap::{Conv, Pipe};
+use tracing::{error, info_span};
 
 use crate::{
     SAMPLE_RATE,
     processing::time::{Beats, Samples, Tempo, Time, TimeSignature},
-    read::Reader,
     streaming::{
         clip::{AudioClipData, Clip, ClipData, ClipTiming, ClipTimingBeats, ClipTimingSamples, SymphoniaClipData},
         track::Track,
@@ -50,7 +48,7 @@ pub struct Playlist {
 pub struct PlaylistOutput {
     audio_engine: JoinHandle<()>,
     pub audio_engine_tx: Sender<AudioEngineMessage>,
-    stream: cpal::Stream, 
+    stream: cpal::Stream,
     playing: bool,
     stream_playing: Arc<atomic::AtomicBool>,
 }
@@ -87,7 +85,14 @@ pub struct PlaylistAudio {
     playhead: Arc<AtomicU64>,
 }
 
+impl Default for PlaylistAudio {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PlaylistAudio {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             out: None,
@@ -97,10 +102,10 @@ impl PlaylistAudio {
     }
 
     pub fn device_out(&mut self, device: &cpal::Device, config: &cpal::StreamConfig) -> &mut PlaylistOutput {
-        let (mut master_tx, master_rx) = HeapRb::new(2048*1024).split();
+        let (mut master_tx, master_rx) = HeapRb::new(2048 * 1024).split();
         let master_rx = Arc::new(Mutex::new(master_rx));
         let stream_playing = Arc::new(atomic::AtomicBool::new(false));
-        
+
         let stream = device
             .build_output_stream(
                 config,
@@ -109,8 +114,8 @@ impl PlaylistAudio {
                     let channels = config.channels;
                     let master_rx = Arc::clone(&master_rx);
                     let stream_playing = Arc::clone(&stream_playing);
-                    
-                    move |data: &mut[f32], _: &cpal::OutputCallbackInfo| {
+
+                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                         if stream_playing.load(atomic::Ordering::Relaxed) {
                             if let Ok(mut rx) = master_rx.try_lock() {
                                 let popped = rx.pop_slice(data) as u64;
@@ -130,7 +135,7 @@ impl PlaylistAudio {
                 None,
             )
             .unwrap();
-            
+
         stream.play().unwrap();
 
         let (audio_engine_tx, audio_engine_rx) = crossbeam_channel::unbounded();
@@ -139,16 +144,14 @@ impl PlaylistAudio {
             let channels = config.channels;
             let initial = self.playlist.clone();
             let master_rx = Arc::clone(&master_rx);
-            
+
             spawn(move || {
                 let mut next: Samples = Samples::default();
                 let mut playlist = initial;
                 let mut playing = false;
-                
-                let mut clip_states: Vec<Vec<Option<(usize, Vec<f32>)>>> = playlist.tracks.iter()
-                    .map(|t| vec![None; t.clips.len()])
-                    .collect();
-                
+
+                let mut clip_states: Vec<Vec<Option<(usize, Vec<f32>)>>> = playlist.tracks.iter().map(|t| vec![None; t.clips.len()]).collect();
+
                 loop {
                     while let Ok(message) = audio_engine_rx.try_recv() {
                         match message {
@@ -157,7 +160,7 @@ impl PlaylistAudio {
                             AudioEngineMessage::Seek(position) => {
                                 playhead.store(position.u64(), atomic::Ordering::Relaxed);
                                 next = position;
-                                
+
                                 for track_states in &mut clip_states {
                                     for state in track_states {
                                         *state = None;
@@ -181,12 +184,10 @@ impl PlaylistAudio {
                                     let mut c_idx = 0;
                                     track.clips.retain(|c| {
                                         let keep = !ids.contains(&c.id);
-                                        if !keep {
-                                            if t_idx < clip_states.len() && c_idx < clip_states[t_idx].len() {
-                                                clip_states[t_idx].remove(c_idx);
-                                            }
-                                        } else {
+                                        if keep {
                                             c_idx += 1;
+                                        } else if t_idx < clip_states.len() && c_idx < clip_states[t_idx].len() {
+                                            clip_states[t_idx].remove(c_idx);
                                         }
                                         keep
                                     });
@@ -200,26 +201,27 @@ impl PlaylistAudio {
                                 }
                             }
                             AudioEngineMessage::Update(mut new) => {
-                                for track in new.tracks.iter_mut() {
-                                    for clip in track.clips.iter_mut() {
-                                        if let Some(old_track) = playlist.tracks.iter_mut().find(|t| t.clips.iter().any(|c| c.id == clip.id)) {
-                                            if let Some(old_clip) = old_track.clips.iter_mut().find(|c| c.id == clip.id) {
-                                                std::mem::swap(&mut clip.data, &mut old_clip.data);
-                                            }
+                                for track in &mut new.tracks {
+                                    for clip in &mut track.clips {
+                                        if let Some(old_track) = playlist.tracks.iter_mut().find(|t| t.clips.iter().any(|c| c.id == clip.id))
+                                            && let Some(old_clip) = old_track.clips.iter_mut().find(|c| c.id == clip.id)
+                                        {
+                                            std::mem::swap(&mut clip.data, &mut old_clip.data);
                                         }
                                     }
                                 }
 
                                 let mut new_states = Vec::new();
-                                for track in new.tracks.iter() {
+                                for track in &new.tracks {
                                     let mut track_states = Vec::new();
-                                    for clip in track.clips.iter() {
+                                    for clip in &track.clips {
                                         let mut found_state = None;
                                         for (t_idx, old_track) in playlist.tracks.iter().enumerate() {
-                                            if let Some(c_idx) = old_track.clips.iter().position(|c| c.id == clip.id) {
-                                                if t_idx < clip_states.len() && c_idx < clip_states[t_idx].len() {
-                                                    found_state = clip_states[t_idx][c_idx].take();
-                                                }
+                                            if let Some(c_idx) = old_track.clips.iter().position(|c| c.id == clip.id)
+                                                && t_idx < clip_states.len()
+                                                && c_idx < clip_states[t_idx].len()
+                                            {
+                                                found_state = clip_states[t_idx][c_idx].take();
                                             }
                                         }
                                         track_states.push(found_state);
@@ -244,32 +246,30 @@ impl PlaylistAudio {
                         });
                     }
 
-                    if looped {
-                        if let Some(preview) = playlist.preview {
-                            next = preview.as_samples(playlist.tempo).start;
-                            for track_states in &mut clip_states {
-                                for state in track_states {
-                                    *state = None;
-                                }
+                    if looped && let Some(preview) = playlist.preview {
+                        next = preview.as_samples(playlist.tempo).start;
+                        for track_states in &mut clip_states {
+                            for state in track_states {
+                                *state = None;
                             }
-                            if let Ok(mut rx) = master_rx.lock() {
-                                rx.clear();
-                            }
+                        }
+                        if let Ok(mut rx) = master_rx.lock() {
+                            rx.clear();
                         }
                     }
 
                     let current_playhead = playhead.load(atomic::Ordering::Relaxed);
-                    
+
                     if playing {
                         let buffered_frames = next.0 - current_playhead as f64;
-                        let target_buffer_frames = SAMPLE_RATE as f64 * 0.2; 
-                        let min_chunk_frames = SAMPLE_RATE as f64 * 0.1;
+                        let target_buffer_frames = SAMPLE_RATE * 0.2;
+                        let min_chunk_frames = SAMPLE_RATE * 0.1;
 
                         if buffered_frames <= (target_buffer_frames - min_chunk_frames) {
                             let chunk_frames = (target_buffer_frames - buffered_frames).ceil() as usize;
                             let vacant_frames = master_tx.vacant_len() / channels as usize;
                             let chunk_frames = chunk_frames.min(vacant_frames);
-                            
+
                             if chunk_frames > 0 {
                                 let block = ClipTimingSamples {
                                     start: next,
@@ -277,7 +277,7 @@ impl PlaylistAudio {
                                     offset: Samples(0.),
                                 };
                                 let mut buffer = vec![0.; chunk_frames * channels as usize];
-                                
+
                                 for (t_idx, track) in playlist.tracks.iter_mut().enumerate() {
                                     for (c_idx, clip) in track.clips.iter_mut().enumerate() {
                                         let ClipTimingSamples { start, end, offset } = clip.timing.as_samples(playlist.tempo);
@@ -289,12 +289,14 @@ impl PlaylistAudio {
                                         let destination = destination..destination + intersection.len();
                                         let source = intersection.start + offset.usize() - start.usize();
                                         let source = Range::from(source..source + intersection.len());
-                                        
+
                                         match &mut clip.data {
                                             ClipData::Audio(AudioClipData { data, channels: in_channels }) => {
                                                 let in_channels = *in_channels;
                                                 let max_frames = data.len() / in_channels;
-                                                if source.start >= max_frames { continue; }
+                                                if source.start >= max_frames {
+                                                    continue;
+                                                }
                                                 let source_range = source.start..source.end.clamp(0, max_frames);
                                                 let out_channels = channels as usize;
                                                 let dest_start = destination.start * out_channels;
@@ -315,47 +317,42 @@ impl PlaylistAudio {
                                                 }
 
                                                 let state = &mut clip_states[t_idx][c_idx];
-                                                let mut requires_seek = true;
-                                                let mut leftovers = Vec::new();
+                                                let mut leftovers = if let Some((expected_start, saved_leftovers)) = state
+                                                    && *expected_start == source.start
+                                                {
+                                                    std::mem::take(saved_leftovers)
+                                                } else {
+                                                    Vec::new()
+                                                };
 
-                                                if let Some((expected_start, saved_leftovers)) = state {
-                                                    if *expected_start == source.start {
-                                                        requires_seek = false;
-                                                        leftovers = std::mem::take(saved_leftovers);
+                                                let SeekedTo { required_ts, actual_ts, .. } = match data.reader.format_reader.seek(
+                                                    SeekMode::Accurate,
+                                                    SeekTo::Time {
+                                                        time: SymphoniaTime::from(source.start as f64 / SAMPLE_RATE),
+                                                        track_id: data.reader.format_reader.tracks()[data.track].id.into(),
+                                                    },
+                                                ) {
+                                                    Ok(res) => res,
+                                                    Err(e) => {
+                                                        eprintln!("Seek error: {e}");
+                                                        continue;
                                                     }
-                                                }
+                                                };
 
-                                                let mut skip_frames = 0;
-                                                if requires_seek {
-                                                    let SeekedTo { required_ts, actual_ts, .. } = match data.reader.format_reader.seek(
-                                                        SeekMode::Accurate,
-                                                        SeekTo::Time {
-                                                            time: SymphoniaTime::from(source.start as f64 / SAMPLE_RATE),
-                                                            track_id: data.reader.format_reader.tracks()[data.track].id.into(),
-                                                        },
-                                                    ) {
-                                                        Ok(res) => res,
-                                                        Err(e) => {
-                                                            eprintln!("Seek error: {e}");
-                                                            continue;
-                                                        }
-                                                    };
+                                                data.decoder.reset();
+                                                let time_base = data.decoder.codec_params().time_base.unwrap();
+                                                let error_secs = time_base.calc_time(required_ts.saturating_sub(actual_ts)).conv::<Duration>().as_secs_f64();
+                                                let mut skip_frames = (error_secs * SAMPLE_RATE).round() as usize;
+                                                leftovers.clear();
 
-                                                    data.decoder.reset();
-                                                    let time_base = data.decoder.codec_params().time_base.unwrap();
-                                                    let error_secs = time_base.calc_time(required_ts.saturating_sub(actual_ts)).conv::<Duration>().as_secs_f64();
-                                                    skip_frames = (error_secs * SAMPLE_RATE).round() as usize;
-                                                    leftovers.clear();
-                                                }
-                                                
                                                 let mut needed_frames = source.end - source.start;
                                                 let out_channels = channels as usize;
                                                 let mut decoded = Vec::<f32>::with_capacity(needed_frames * out_channels);
-                                                
+
                                                 let take_leftovers_frames = needed_frames.min(leftovers.len() / out_channels);
                                                 decoded.extend(leftovers.drain(0..take_leftovers_frames * out_channels));
                                                 needed_frames -= take_leftovers_frames;
-                                                
+
                                                 loop {
                                                     if needed_frames == 0 {
                                                         break;
@@ -366,7 +363,7 @@ impl PlaylistAudio {
                                                         Err(SymphoniaError::IoError(error)) if error.kind() == io::ErrorKind::UnexpectedEof => break,
                                                         Err(_) => break,
                                                     };
-                                                    
+
                                                     if packet.track_id() != data.reader.format_reader.tracks()[data.track].id {
                                                         continue;
                                                     }
@@ -382,16 +379,16 @@ impl PlaylistAudio {
 
                                                     let mut dest_buf = source_audio.make_equivalent::<f32>();
                                                     source_audio.convert(&mut dest_buf);
-                                                    
+
                                                     let dest_frames = dest_buf.frames();
                                                     let to_skip_frames = skip_frames.min(dest_frames);
                                                     skip_frames -= to_skip_frames;
-                                                    
+
                                                     let available_frames = dest_frames - to_skip_frames;
                                                     let take_frames = needed_frames.min(available_frames);
-                                                    
+
                                                     let in_channels = dest_buf.spec().channels.count();
-                                                    
+
                                                     for i in to_skip_frames..(to_skip_frames + take_frames) {
                                                         for c in 0..out_channels {
                                                             let src_c = if c < in_channels { c } else { 0 };
@@ -399,7 +396,7 @@ impl PlaylistAudio {
                                                         }
                                                     }
                                                     needed_frames -= take_frames;
-                                                    
+
                                                     if available_frames > take_frames {
                                                         for i in (to_skip_frames + take_frames)..dest_frames {
                                                             for c in 0..out_channels {
@@ -415,7 +412,7 @@ impl PlaylistAudio {
                                                 for (buffer_sample, decoded_sample) in buffer[dest_start..dest_start + dest_len].iter_mut().zip(&decoded) {
                                                     *buffer_sample = (*decoded_sample).mul_add(track.gain, *buffer_sample);
                                                 }
-                                                
+
                                                 *state = Some((source.start + decoded.len() / out_channels, leftovers));
                                             }
                                         }
@@ -456,10 +453,12 @@ impl PlaylistAudio {
         }
     }
 
+    #[must_use]
     pub fn playing(&self) -> bool {
         self.out.as_ref().is_some_and(|out| out.playing)
     }
 
+    #[must_use]
     pub fn playhead(&self) -> Samples {
         Samples(self.playhead.load(atomic::Ordering::Relaxed) as f64)
     }
@@ -470,7 +469,8 @@ impl PlaylistAudio {
         }
     }
 
-    pub fn playlist(&self) -> &Playlist {
+    #[must_use]
+    pub const fn playlist(&self) -> &Playlist {
         &self.playlist
     }
 
@@ -499,12 +499,12 @@ impl PlaylistAudio {
             let dest = new_track_idx.min(self.playlist.tracks.len().saturating_sub(1));
             self.playlist.tracks[dest].clips.push(clip);
         }
-        
+
         if let Some(out) = &self.out {
             out.audio_engine_tx.send(AudioEngineMessage::Update(self.playlist.clone())).unwrap();
         }
     }
-    
+
     pub fn update_clip_timings(&mut self, timings: HashMap<usize, ClipTiming>) {
         for track in &mut self.playlist.tracks {
             for clip in &mut track.clips {
@@ -531,7 +531,7 @@ impl PlaylistAudio {
     pub fn duplicate_clips(&mut self, ids: &[usize]) -> Vec<usize> {
         let mut new_clips = Vec::new();
         let mut new_ids = Vec::new();
-        
+
         let mut min_start = f64::MAX;
         let mut max_end = 0.0;
         for track in &self.playlist.tracks {
@@ -539,15 +539,21 @@ impl PlaylistAudio {
                 if ids.contains(&clip.id) {
                     let start = clip.timing.as_beats(self.playlist.tempo).start.f64();
                     let end = clip.timing.as_beats(self.playlist.tempo).end.f64();
-                    if start < min_start { min_start = start; }
-                    if end > max_end { max_end = end; }
+                    if start < min_start {
+                        min_start = start;
+                    }
+                    if end > max_end {
+                        max_end = end;
+                    }
                 }
             }
         }
-        
+
         let length = max_end - min_start;
-        if length <= 0.0 { return new_ids; }
-    
+        if length <= 0.0 {
+            return new_ids;
+        }
+
         for (t_idx, track) in self.playlist.tracks.iter().enumerate() {
             for clip in &track.clips {
                 if ids.contains(&clip.id) {
@@ -563,7 +569,7 @@ impl PlaylistAudio {
                 }
             }
         }
-    
+
         if !new_clips.is_empty() {
             for (t_idx, clip) in new_clips {
                 self.playlist.tracks[t_idx].clips.push(clip);
@@ -572,7 +578,7 @@ impl PlaylistAudio {
                 out.audio_engine_tx.send(AudioEngineMessage::Update(self.playlist.clone())).unwrap();
             }
         }
-        
+
         new_ids
     }
 
@@ -582,7 +588,7 @@ impl PlaylistAudio {
         let mut to_delete = Vec::new();
         let mut new_clips = Vec::new();
         let mut timings_to_update = HashMap::new();
-    
+
         for t_idx in track_range {
             if let Some(track) = self.playlist.tracks.get(t_idx) {
                 for clip in &track.clips {
@@ -590,11 +596,14 @@ impl PlaylistAudio {
                     if timing.start.f64() >= start.f64() && timing.end.f64() <= end.f64() {
                         to_delete.push(clip.id);
                     } else if timing.start.f64() < start.f64() && timing.end.f64() > end.f64() {
-                        timings_to_update.insert(clip.id, ClipTiming::Beats(ClipTimingBeats {
-                            start: timing.start,
-                            end: start,
-                            offset: timing.offset,
-                        }));
+                        timings_to_update.insert(
+                            clip.id,
+                            ClipTiming::Beats(ClipTimingBeats {
+                                start: timing.start,
+                                end: start,
+                                offset: timing.offset,
+                            }),
+                        );
                         let new_clip_offset = timing.offset.f64() + (end.f64() - timing.start.f64());
                         let mut new_clip = clip.clone_with_new_id();
                         new_clip.timing = ClipTiming::Beats(ClipTimingBeats {
@@ -606,22 +615,28 @@ impl PlaylistAudio {
                     } else if timing.start.f64() >= start.f64() && timing.start.f64() < end.f64() {
                         let new_start = end;
                         let new_offset = timing.offset.f64() + (end.f64() - timing.start.f64());
-                        timings_to_update.insert(clip.id, ClipTiming::Beats(ClipTimingBeats {
-                            start: new_start,
-                            end: timing.end,
-                            offset: Beats::new(new_offset),
-                        }));
+                        timings_to_update.insert(
+                            clip.id,
+                            ClipTiming::Beats(ClipTimingBeats {
+                                start: new_start,
+                                end: timing.end,
+                                offset: Beats::new(new_offset),
+                            }),
+                        );
                     } else if timing.end.f64() > start.f64() && timing.end.f64() <= end.f64() {
-                        timings_to_update.insert(clip.id, ClipTiming::Beats(ClipTimingBeats {
-                            start: timing.start,
-                            end: start,
-                            offset: timing.offset,
-                        }));
+                        timings_to_update.insert(
+                            clip.id,
+                            ClipTiming::Beats(ClipTimingBeats {
+                                start: timing.start,
+                                end: start,
+                                offset: timing.offset,
+                            }),
+                        );
                     }
                 }
             }
         }
-    
+
         if !to_delete.is_empty() {
             self.delete_clips(&to_delete);
         }
@@ -637,25 +652,25 @@ impl PlaylistAudio {
             }
         }
     }
-    
+
     pub fn duplicate_time_selection(&mut self, track_range: std::ops::RangeInclusive<usize>, time_range: std::ops::Range<f64>) {
         let start = Beats::new(time_range.start);
         let end = Beats::new(time_range.end);
         let length = end.f64() - start.f64();
         let mut new_clips = Vec::new();
-    
+
         for t_idx in track_range {
             if let Some(track) = self.playlist.tracks.get(t_idx) {
                 for clip in &track.clips {
                     let timing = clip.timing.as_beats(self.playlist.tempo);
-                    
+
                     let clip_start = timing.start.f64().max(start.f64());
                     let clip_end = timing.end.f64().min(end.f64());
-                    
+
                     if clip_start < clip_end {
                         let mut new_clip = clip.clone_with_new_id();
                         let offset_add = clip_start - timing.start.f64();
-                        
+
                         new_clip.timing = ClipTiming::Beats(ClipTimingBeats {
                             start: Beats::new(clip_start + length),
                             end: Beats::new(clip_end + length),
@@ -666,7 +681,7 @@ impl PlaylistAudio {
                 }
             }
         }
-    
+
         if !new_clips.is_empty() {
             for (t_idx, clip) in new_clips {
                 self.playlist.tracks[t_idx].clips.push(clip);
@@ -743,7 +758,7 @@ impl Playlist {
                                     start: Beats(0.),
                                     end: Beats(1.),
                                     offset: Beats(0.),
-                                })
+                                }),
                             ),
                             Clip::new(
                                 "Sine 2".to_string(),
@@ -752,7 +767,7 @@ impl Playlist {
                                     start: Beats(2.),
                                     end: Beats(3.),
                                     offset: Beats(0.),
-                                })
+                                }),
                             ),
                         ],
                         gain: 1.,
@@ -765,7 +780,7 @@ impl Playlist {
                                 start: Beats(2.5),
                                 end: Beats(3.5),
                                 offset: Beats(0.),
-                            })
+                            }),
                         )],
                         gain: 1.,
                     },
@@ -782,11 +797,20 @@ impl Playlist {
         self.tracks[index].gain = gain;
     }
 
-    pub fn add_clips(&mut self, track: usize, path: Arc<Path>, start: Time) {
+    /// Add clips to the playlist from a file path.
+    /// The file will be added starting at the track at the specified index, starting at the given time, then continue down subsequent tracks if the file contains multiple clips.
+    /// Tracks will be added to the playlist if there are not enough tracks to fit all the clips.
+    ///
+    /// # Errors
+    /// Returns an error if there was an issue reading the file or decoding the clips.
+    pub fn add_clips(&mut self, track: usize, path: Arc<Path>, start: Time) -> SymphoniaResult<()> {
         let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
-        let clips = SymphoniaClipData::from_path(Arc::clone(&path));
+        let clips = SymphoniaClipData::from_path(path)?;
         self.tracks.resize((track + clips.len()).max(self.tracks.len()), Track { clips: Vec::new(), gain: 1. });
         for (track, clip) in self.tracks.iter_mut().skip(track).zip(clips) {
+            let clip = clip?;
+            let span = info_span!("clip_add", ?clip);
+            let _enter = span.enter();
             track.clips.push(Clip::new(
                 name.clone(),
                 ClipData::Symphonia(clip.clone()),
@@ -796,10 +820,14 @@ impl Playlist {
                         + Samples(
                             clip.decoder
                                 .codec_params()
-                                .time_base
-                                .unwrap()
-                                .calc_time(clip.decoder.codec_params().n_frames.unwrap())
-                                .conv::<Duration>()
+                                .pipe(|codec_params| codec_params.time_base.zip(codec_params.n_frames))
+                                .map_or_else(
+                                    || {
+                                        error!(params = ?clip.decoder.codec_params(), "no time base or frame count on clip to calculate duration", );
+                                        Duration::from_secs(5)
+                                    },
+                                    |(time_base, n_frames)| time_base.calc_time(n_frames).conv::<Duration>(),
+                                )
                                 .as_secs_f64()
                                 * SAMPLE_RATE,
                         ),
@@ -807,6 +835,7 @@ impl Playlist {
                 }),
             ));
         }
+        Ok(())
     }
 
     #[must_use]

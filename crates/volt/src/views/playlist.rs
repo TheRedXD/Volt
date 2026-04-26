@@ -42,8 +42,8 @@ pub struct PlaylistView {
     pub zoom: Size<Rems>,
     pub snapping: Snapping,
     pub pan: Point<Rems>,
-    pub target_pan: Point<Rems>, 
-    pub auto_scroll: bool,       
+    pub target_pan: Point<Rems>,
+    pub auto_scroll: bool,
 
     pub hovered_position: Option<Point<Pixels>>,
     pub bounds: Bounds<Pixels>,
@@ -53,7 +53,7 @@ pub struct PlaylistView {
     pub clip_waveforms: HashMap<usize, Vec<Vec<Vec<Range<f32>>>>>,
     pub selected_clips: HashSet<usize>,
     pub dragging_clips: Option<(usize, Point<Pixels>, HashMap<usize, (usize, ClipTiming)>)>,
-    
+
     pub last_scrollbar_mouse_pos: Option<Point<Pixels>>,
     pub resizing_clip_start: Option<Point<Pixels>>,
     pub time_selection: Option<TimeSelection>,
@@ -159,7 +159,7 @@ impl PlaylistView {
             let (track_range, time_range) = sel.normalized();
             if time_range.is_empty() { return; }
             self.audio.duplicate_time_selection(track_range, time_range);
-            
+
             let new_start = sel.end_beats.max(sel.start_beats);
             let duration = (sel.end_beats - sel.start_beats).abs();
             let new_end = new_start + duration;
@@ -199,7 +199,7 @@ impl Render for PlaylistView {
         let playhead_absolute_x = self.beats_to_width(playhead_beats);
 
         let view_width_rems = self.bounds.size.width.as_f32() / rem_size.as_f32();
-        
+
         let culling_view_width_rems = if self.bounds.size.width.as_f32() == 0.0 {
             10000.0
         } else {
@@ -207,10 +207,10 @@ impl Render for PlaylistView {
         };
 
         let half_screen_rems = view_width_rems / 2.0;
-        
+
         if self.auto_scroll && self.audio.playing() {
             let ideal_pan_x = half_screen_rems - playhead_absolute_x.0;
-            
+
             if ideal_pan_x < 0. {
                 self.pan.x.0 = ideal_pan_x;
                 self.target_pan.x.0 = ideal_pan_x;
@@ -219,7 +219,7 @@ impl Render for PlaylistView {
 
         if self.pan != self.target_pan {
             let dy = self.target_pan.y.0 - self.pan.y.0;
-            
+
             let dx = if self.auto_scroll && self.audio.playing() && (half_screen_rems - playhead_absolute_x.0) < 0. {
                 0.0
             } else {
@@ -245,7 +245,7 @@ impl Render for PlaylistView {
         let max_clip_end = self.audio.playlist().tracks().iter()
             .flat_map(|t| t.clips().iter().map(|c| c.timing.as_beats(tempo).end.f64()))
             .fold(0.0_f64, f64::max);
-        
+
         let total_beats = max_clip_end.max(playhead_beats.f64()).max(32.0);
         let total_width_px = self.beats_to_width(Beats::new(total_beats)).to_pixels(window.rem_size()).as_f32();
         let view_width_px = self.bounds.size.width.as_f32();
@@ -418,13 +418,13 @@ impl Render for PlaylistView {
                         let Some((leader_id, start_pos, initial_state)) = &view.dragging_clips else { return };
                         let dx = event.event.position.x - start_pos.x;
                         let dy = event.event.position.y - start_pos.y;
-                        
+
                         let mut dx_beats = view.width_to_beats(dx.abs(), window.rem_size());
                         if dx < Pixels::ZERO { dx_beats = Beats::new(-dx_beats.f64()); }
-                        
+
                         let track_height = view.zoom.height.to_pixels(window.rem_size()) + window.rem_size() * 0.25;
                         let mut track_offset = (dy.as_f32() / track_height.as_f32()).round() as i32;
-                        
+
                         let mut min_track = usize::MAX;
                         let mut max_track = 0;
                         for (_, (t_idx, _)) in initial_state {
@@ -441,7 +441,7 @@ impl Render for PlaylistView {
                         if let Some((_, leader_initial_timing)) = initial_state.get(leader_id) {
                             let leader_initial = leader_initial_timing.as_beats(tempo);
                             let mut leader_new_start = leader_initial.start.f64() + dx_beats.f64();
-                            
+
                             if !event.event.modifiers.alt {
                                 if let Snapping::Beats { divisor } = view.snapping {
                                     let snap_interval = 1.0 / divisor as f64;
@@ -449,24 +449,24 @@ impl Render for PlaylistView {
                                 }
                             }
                             leader_new_start = leader_new_start.max(0.0);
-                            
+
                             let actual_dx_beats = leader_new_start - leader_initial.start.f64();
-                            
+
                             let mut new_positions = HashMap::new();
                             for (id, (initial_t_idx, initial_timing)) in initial_state {
                                 let initial_beats = initial_timing.as_beats(tempo);
                                 let new_start = (initial_beats.start.f64() + actual_dx_beats).max(0.0);
                                 let len = initial_beats.end.f64() - initial_beats.start.f64();
-                                
+
                                 let target_track_idx = (*initial_t_idx as i32 + track_offset) as usize;
-                                
+
                                 new_positions.insert(*id, (target_track_idx, ClipTiming::Beats(ClipTimingBeats {
                                     start: Beats::new(new_start),
                                     end: Beats::new(new_start + len),
                                     offset: initial_beats.offset,
                                 })));
                             }
-                            
+
                             view.audio.move_clips(new_positions);
                             cx.notify();
                         }
@@ -574,14 +574,14 @@ impl Render for PlaylistView {
                                 view.zoom = view.zoom.map(|length| length * (delta + 1.));
                                 view.zoom.width.0 = view.zoom.width.0.max(8.);
                                 view.zoom.height.0 = view.zoom.height.0.max(2.);
-                                
+
                                 let position = event.position.relative_to(&view.bounds.origin);
                                 let pos_x = position.x.as_f32();
                                 let pos_y = position.y.as_f32();
-                                
+
                                 let factor_x = view.zoom.width.0 / old.width.0;
                                 let factor_y = view.zoom.height.0 / old.height.0;
-                                
+
                                 let old_target_x = view.target_pan.x.to_pixels(window.rem_size()).as_f32();
                                 let old_target_y = view.target_pan.y.to_pixels(window.rem_size()).as_f32();
                                 let old_current_x = view.pan.x.to_pixels(window.rem_size()).as_f32();
@@ -608,11 +608,11 @@ impl Render for PlaylistView {
                                     let old = view.zoom;
                                     view.zoom.width.0 = (view.zoom.width.0 * factor.x).max(8.);
                                     view.zoom.height.0 = (view.zoom.height.0 * factor.y).max(2.);
-                                    
+
                                     let position = event.position.relative_to(&view.bounds.origin);
                                     let pos_x = position.x.as_f32();
                                     let pos_y = position.y.as_f32();
-                                    
+
                                     let factor_x = view.zoom.width.0 / old.width.0;
                                     let factor_y = view.zoom.height.0 / old.height.0;
 
@@ -682,7 +682,7 @@ impl Render for PlaylistView {
                                         view.selected_clips.clear();
                                         let x_pos = event.position.x - view.bounds.left() - view.pan.x.to_pixels(window.rem_size());
                                         let mut beats = view.width_to_beats(x_pos.max(Pixels::ZERO), window.rem_size()).f64();
-                                        
+
                                         if !event.modifiers.alt {
                                             if let Snapping::Beats { divisor } = view.snapping {
                                                 let snap_interval = 1.0 / divisor as f64;
@@ -707,13 +707,13 @@ impl Render for PlaylistView {
                                         let beats = clip.timing.as_beats(tempo);
                                         let start = self.beats_to_width(beats.start) + self.pan.x;
                                         let length = self.beats_to_width(beats.len());
-                                        
+
                                         if start.0 + length.0 < 0.0 || start.0 > culling_view_width_rems {
                                             return None;
                                         }
 
                                         let is_selected = self.selected_clips.contains(&clip.id);
-                                        
+
                                         Some(div()
                                             .absolute()
                                             .left(start)
@@ -752,7 +752,7 @@ impl Render for PlaylistView {
                                                                     view.selected_clips.insert(clip_id);
                                                                 }
                                                             }
-                                                            
+
                                                             let mut initial = HashMap::new();
                                                             for (t_idx, t) in view.audio.playlist().tracks().iter().enumerate() {
                                                                 for c in t.clips() {
@@ -762,11 +762,11 @@ impl Render for PlaylistView {
                                                                 }
                                                             }
                                                             view.dragging_clips = Some((clip_id, event.position, initial));
-                                                            
+
                                                             if let Some(focus) = &view.focus_handle {
                                                                 focus.focus(window, cx);
                                                             }
-                                                            
+
                                                             cx.notify();
                                                         }
                                                     }))
@@ -782,11 +782,11 @@ impl Render for PlaylistView {
                                                             to_delete.insert(clip_id);
                                                             view.audio.delete_clips(&to_delete.into_iter().collect::<Vec<_>>());
                                                             view.selected_clips.clear();
-                                                            
+
                                                             if let Some(focus) = &view.focus_handle {
                                                                 focus.focus(window, cx);
                                                             }
-                                                            
+
                                                             cx.notify();
                                                         }
                                                     }))
@@ -809,12 +809,12 @@ impl Render for PlaylistView {
                                                             let theme = Arc::clone(&theme);
                                                             move |clip_bounds, (), window, cx| {
                                                                 let Some(view_entity) = view.upgrade() else { return; };
-                                                                
+
                                                                 let level = view_entity
                                                                     .update(cx, |view, _| {
                                                                         let levels = view.clip_waveforms.entry(clip.id).or_insert_with(|| {
-                                                                            let base_channels = clip.base_minmax_mipmap(tempo, MIPMAP_HIGH);
-                
+                                                                            let base_channels = clip.base_minmax_mipmap(tempo, MIPMAP_HIGH).unwrap();
+
                                                                             base_channels.into_iter().map(|base| {
                                                                                 let max = 10;
                                                                                 (0..max).fold(Vec::with_capacity(max).tap_mut(|levels| levels.push(base)), |mut levels, _| {
@@ -834,14 +834,14 @@ impl Render for PlaylistView {
                                                                         let level = (window_size / MIPMAP_HIGH as f64).log2().floor().max(0.) as usize;
                                                                         level.min(levels[0].len() - 1)
                                                                     });
-                                                                
+
                                                                 let view_reader = view_entity.read(cx);
                                                                 let Some(channels_waveforms) = view_reader.clip_waveforms.get(&clip.id) else { return; };
 
                                                                 let num_channels = channels_waveforms.len();
                                                                 if num_channels == 0 { return; }
                                                                 let channel_height = clip_bounds.size.height / num_channels as f32;
-                                                                
+
                                                                 let clip_left = clip_bounds.left();
                                                                 let visible_bounds = clip_bounds.intersect(&window.bounds());
                                                                 if visible_bounds.is_empty() {
@@ -853,7 +853,7 @@ impl Render for PlaylistView {
                                                                 for (c, channel_levels) in channels_waveforms.iter().enumerate() {
                                                                     let waveform = channel_levels.get(level).unwrap();
                                                                     let center_y = clip_bounds.top() + channel_height * c as f32 + channel_height / 2.0;
-                                                                    
+
                                                                     let start_x_usize = (visible_bounds.left() - clip_left).conv::<usize>();
                                                                     let end_x_usize = width.min(visible_bounds.left() - clip_left + visible_bounds.size.width).conv::<usize>();
 
@@ -879,7 +879,7 @@ impl Render for PlaylistView {
                                                                         )
                                                                         .map(PathBuilder::build)
                                                                         .map(Result::unwrap);
-                                                                        
+
                                                                     for path in paths {
                                                                         window.paint_path(path, theme.accent);
                                                                     }
@@ -997,13 +997,13 @@ impl Render for PlaylistView {
                                 let track_height = self.zoom.height.to_pixels(window.rem_size()) + window.rem_size() * 0.25;
                                 let top_track = *track_range.start();
                                 let bottom_track = *track_range.end();
-                                
+
                                 let top = px(top_track as f32 * track_height.as_f32());
                                 let height = px((bottom_track - top_track + 1) as f32 * track_height.as_f32() - window.rem_size().as_f32() * 0.25);
-                                
+
                                 let left = self.beats_to_width(Beats::new(time_range.start)) + self.pan.x;
                                 let width = self.beats_to_width(Beats::new(time_range.end)) - self.beats_to_width(Beats::new(time_range.start));
-                                
+
                                 if time_range.start == time_range.end {
                                     div()
                                         .absolute()
@@ -1079,41 +1079,41 @@ impl Render for PlaylistView {
                             .on_drag(ScrollbarDrag, |_, _, _, cx| cx.new(|_| gpui::Empty))
                             .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<ScrollbarDrag>, window, cx| {
                                 view.auto_scroll = false;
-                                
+
                                 let Some(last_pos) = view.last_scrollbar_mouse_pos else { return };
                                 let current_pos = event.event.position;
-                                
+
                                 let dx = current_pos.x.as_f32() - last_pos.x.as_f32();
                                 let dy = current_pos.y.as_f32() - last_pos.y.as_f32();
                                 view.last_scrollbar_mouse_pos = Some(current_pos);
-                                
+
                                 let tempo = view.audio.playlist().tempo;
                                 let max_clip_end = view.audio.playlist().tracks().iter()
                                     .flat_map(|t| t.clips().iter().map(|c| c.timing.as_beats(tempo).end.f64()))
                                     .fold(0.0_f64, f64::max);
-                                    
+
                                 let total_beats = max_clip_end.max(view.audio.playhead().beats(tempo).f64()).max(32.0);
                                 let total_width_px = view.beats_to_width(Beats::new(total_beats)).to_pixels(window.rem_size()).as_f32();
                                 let view_width_px = view.bounds.size.width.as_f32();
-                                
+
                                 let delta_scroll_x_px = dx * (total_width_px / view_width_px);
                                 view.target_pan.x = rems(view.target_pan.x.0 - (delta_scroll_x_px / window.rem_size().as_f32()));
-                                
+
                                 if dy.abs() > 0.0 {
                                     let old = view.zoom;
-                                    let zoom_factor = 1.0 - (dy * 0.01); 
+                                    let zoom_factor = 1.0 - (dy * 0.01);
                                     view.zoom.width.0 = (view.zoom.width.0 * zoom_factor).max(8.);
                                     let factor = view.zoom.width.0 / old.width.0;
-                                    
+
                                     let center_x = view_width_px / 2.0;
                                     let pan_px = -view.target_pan.x.to_pixels(window.rem_size()).as_f32();
                                     let center_abs_px = pan_px + center_x;
                                     let new_center_abs_px = center_abs_px * factor;
                                     let new_pan_px = new_center_abs_px - center_x;
-                                    
+
                                     view.target_pan.x = rems(-new_pan_px / window.rem_size().as_f32());
                                 }
-                                
+
                                 view.target_pan.x.0 = view.target_pan.x.0.min(0.);
                                 cx.notify();
                             }))
