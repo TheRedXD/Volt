@@ -41,8 +41,10 @@ impl<V: AdjustableInputValue> RenderOnce for AdjustableInput<V> {
     fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
         struct Payload<V: AdjustableInputValue>(Point<Pixels>, V, SharedString);
         div()
+            // .text_xs()
             .child(div().child(format!("{:.02}", self.value)).font_family("IBM Plex Mono"))
-            .rounded_md()
+            // .rounded_md()
+            // .bg(self.theme.navbar_background_gradient_top)
             // .border_1()
             // .border_color(self.theme.navbar_outline)
             .cursor_ns_resize()

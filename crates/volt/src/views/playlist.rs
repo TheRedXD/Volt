@@ -278,6 +278,7 @@ impl Render for PlaylistView {
                 div()
                     .relative()
                     .h_8()
+                    .min_h_8()
                     .id("ruler")
                     .on_hover(cx.listener(|view, bool, _, cx| {
                         if !bool {
@@ -391,7 +392,7 @@ impl Render for PlaylistView {
                     .relative()
                     .id("tracks_container")
                     .track_focus(&focus_handle)
-                    .overflow_y_scroll()
+                    .overflow_y_hidden()
                     .on_mouse_down(MouseButton::Left, cx.listener(|view, _, window, cx| {
                         view.selected_clips.clear();
                         view.time_selection = None;
@@ -606,7 +607,7 @@ impl Render for PlaylistView {
                                 if event.control {
                                     let factor = event.delta.pixel_delta(window.rem_size()).scale(0.001).map(|length| length.as_f32() + 1.);
                                     let old = view.zoom;
-                                    view.zoom.width.0 = (view.zoom.width.0 * factor.x).max(8.);
+                                    view.zoom.width.0 = (view.zoom.width.0 * factor.x).max(2.);
                                     view.zoom.height.0 = (view.zoom.height.0 * factor.y).max(2.);
 
                                     let position = event.position.relative_to(&view.bounds.origin);
@@ -938,7 +939,7 @@ impl Render for PlaylistView {
                                             .right_0()
                                             .top_0()
                                             .h_full()
-                                            .min_w(gpui::Pixels::from(150.))
+                                            .w(gpui::Pixels::from(150.))
                                             .bg(theme.central_background)
                                             .rounded_md()
                                             .border_1()
@@ -968,7 +969,7 @@ impl Render for PlaylistView {
                                                 name: format!("Track {} gain", track_index + 1).into(),
                                                 default: 0.,
                                             }).child("dB"))
-                                            .pipe(deferred)
+                                            // .pipe(deferred)
                                     })
                                     .child(
                                         div()
@@ -1102,7 +1103,7 @@ impl Render for PlaylistView {
                                 if dy.abs() > 0.0 {
                                     let old = view.zoom;
                                     let zoom_factor = 1.0 - (dy * 0.01);
-                                    view.zoom.width.0 = (view.zoom.width.0 * zoom_factor).max(8.);
+                                    view.zoom.width.0 = (view.zoom.width.0 * zoom_factor).max(2.);
                                     let factor = view.zoom.width.0 / old.width.0;
 
                                     let center_x = view_width_px / 2.0;

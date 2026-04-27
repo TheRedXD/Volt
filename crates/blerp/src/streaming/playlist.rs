@@ -317,33 +317,39 @@ impl PlaylistAudio {
                                                 }
 
                                                 let state = &mut clip_states[t_idx][c_idx];
-                                                let mut leftovers = if let Some((expected_start, saved_leftovers)) = state
-                                                    && *expected_start == source.start
-                                                {
-                                                    std::mem::take(saved_leftovers)
-                                                } else {
-                                                    Vec::new()
-                                                };
+                                                
+                                                let mut requires_seek = true;
+                                                let mut leftovers = Vec::new();
 
-                                                let SeekedTo { required_ts, actual_ts, .. } = match data.reader.format_reader.seek(
-                                                    SeekMode::Accurate,
-                                                    SeekTo::Time {
-                                                        time: SymphoniaTime::from(source.start as f64 / SAMPLE_RATE),
-                                                        track_id: data.reader.format_reader.tracks()[data.track].id.into(),
-                                                    },
-                                                ) {
-                                                    Ok(res) => res,
-                                                    Err(e) => {
-                                                        eprintln!("Seek error: {e}");
-                                                        continue;
+                                                if let Some((expected_start, saved_leftovers)) = state {
+                                                    if *expected_start == source.start {
+                                                        requires_seek = false;
+                                                        leftovers = std::mem::take(saved_leftovers);
                                                     }
-                                                };
+                                                }
 
-                                                data.decoder.reset();
-                                                let time_base = data.decoder.codec_params().time_base.unwrap();
-                                                let error_secs = time_base.calc_time(required_ts.saturating_sub(actual_ts)).conv::<Duration>().as_secs_f64();
-                                                let mut skip_frames = (error_secs * SAMPLE_RATE).round() as usize;
-                                                leftovers.clear();
+                                                let mut skip_frames = 0;
+                                                
+                                                if requires_seek {
+                                                    let SeekedTo { required_ts, actual_ts, .. } = match data.reader.format_reader.seek(
+                                                        SeekMode::Accurate,
+                                                        SeekTo::Time {
+                                                            time: SymphoniaTime::from(source.start as f64 / SAMPLE_RATE),
+                                                            track_id: data.reader.format_reader.tracks()[data.track].id.into(),
+                                                        },
+                                                    ) {
+                                                        Ok(res) => res,
+                                                        Err(e) => {
+                                                            eprintln!("Seek error: {e}");
+                                                            continue;
+                                                        }
+                                                    };
+
+                                                    data.decoder.reset();
+                                                    let time_base = data.decoder.codec_params().time_base.unwrap();
+                                                    let error_secs = time_base.calc_time(required_ts.saturating_sub(actual_ts)).conv::<Duration>().as_secs_f64();
+                                                    skip_frames = (error_secs * SAMPLE_RATE).round() as usize;
+                                                }
 
                                                 let mut needed_frames = source.end - source.start;
                                                 let out_channels = channels as usize;
@@ -784,6 +790,19 @@ impl Playlist {
                         )],
                         gain: 1.,
                     },
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    Track {clips:vec![],gain:1.},
+                    
                 ]
             },
             time_signature: TimeSignature::default(),

@@ -191,7 +191,7 @@ impl RenderOnce for Navbar {
                     .child(div().w_px().bg(self.theme.navbar_outline).h_full())
                     .child(
                         div()
-                            .p_1()
+                            .p_2()
                             .rounded_md()
                             .bg(
                                 {
@@ -207,7 +207,7 @@ impl RenderOnce for Navbar {
                                     color
                                 }
                             )
-                            .child(img(PLAY_ICON).text_color(gpui::green()).size_4())
+                            .child(img(PLAY_ICON).text_color(gpui::green()).size_3())
                             .on_mouse_down(MouseButton::Left, {
                                 let playlist = self.playlist.clone();
                                 move |_, _, cx| {
