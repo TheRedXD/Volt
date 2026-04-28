@@ -399,7 +399,8 @@ impl Render for Volt {
                     .items_center()
                     .text_sm()
                     .child(div().child(concat!("Volt ", env!("CARGO_PKG_VERSION"))))
-                    .child(div().child("Highly WIP, alpha build")),
+                    .child(div().child("Highly WIP, alpha build"))
+                    .pipe(deferred),
             )
     }
 }

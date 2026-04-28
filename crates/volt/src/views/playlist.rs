@@ -6,10 +6,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    canvas, deferred, div, hsla, pattern_slash, point, px, rems, size, AbsoluteLength, AppContext,
-    Bounds, Context, DefiniteLength, InteractiveElement, IntoElement, Length, MouseButton,
-    ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement,
-    Styled, Window,
+    AbsoluteLength, AppContext, Bounds, Context, DefiniteLength, InteractiveElement, IntoElement, Length, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div, hsla, pattern_slash, point, px, rems, rgba, size
 };
 use gpui_component::scroll::ScrollableElement;
 use itertools::Itertools;
@@ -423,7 +420,7 @@ impl Render for PlaylistView {
                         let mut dx_beats = view.width_to_beats(dx.abs(), window.rem_size());
                         if dx < Pixels::ZERO { dx_beats = Beats::new(-dx_beats.f64()); }
 
-                        let track_height = view.zoom.height.to_pixels(window.rem_size()) + window.rem_size() * 0.25;
+                        let track_height = view.zoom.height.to_pixels(window.rem_size());
                         let mut track_offset = (dy.as_f32() / track_height.as_f32()).round() as i32;
 
                         let mut min_track = usize::MAX;
@@ -545,7 +542,7 @@ impl Render for PlaylistView {
 
                             let start_y = view.time_selection_start_pos.map(|p| p.y).unwrap_or(event.event.position.y);
                             let dy = event.event.position.y - start_y;
-                            let track_height = view.zoom.height.to_pixels(window.rem_size()) + window.rem_size() * 0.25;
+                            let track_height = view.zoom.height.to_pixels(window.rem_size());
                             let track_offset = (dy.as_f32() / track_height.as_f32()).round() as i32;
                             let max_track = view.audio.playlist().tracks().len().saturating_sub(1);
                             let start_track = selection.start_track;
@@ -566,7 +563,7 @@ impl Render for PlaylistView {
                             .flex_grow()
                             .relative()
                             .size_auto()
-                            .gap_1()
+                            .gap_0()
                             .id("tracks")
                             .overflow_x_hidden()
                             .on_pinch(cx.listener(|view, event: &gpui::PinchEvent, window, cx| {
@@ -676,6 +673,8 @@ impl Render for PlaylistView {
                             .children(self.audio.playlist().tracks().iter().enumerate().map(|(track_index, track)| {
                                 div()
                                     .id(format!("track_bg_{}", track_index))
+                                    .border_b_1()
+                                    .border_color(rgba(0xffffff04))
                                     .relative()
                                     .h(self.zoom.height)
                                     .on_mouse_down(MouseButton::Left, cx.listener(move |view, event: &gpui::MouseDownEvent, window, cx| {
@@ -941,7 +940,7 @@ impl Render for PlaylistView {
                                             .h_full()
                                             .w(gpui::Pixels::from(150.))
                                             .bg(theme.central_background)
-                                            .rounded_md()
+                                            // .rounded_md()
                                             .border_1()
                                             .border_color(theme.navbar_outline)
                                             .id(track_index)
@@ -995,12 +994,12 @@ impl Render for PlaylistView {
                             }))
                             .children(self.time_selection.as_ref().map(|sel| {
                                 let (track_range, time_range) = sel.normalized();
-                                let track_height = self.zoom.height.to_pixels(window.rem_size()) + window.rem_size() * 0.25;
+                                let track_height = self.zoom.height.to_pixels(window.rem_size());
                                 let top_track = *track_range.start();
                                 let bottom_track = *track_range.end();
 
                                 let top = px(top_track as f32 * track_height.as_f32());
-                                let height = px((bottom_track - top_track + 1) as f32 * track_height.as_f32() - window.rem_size().as_f32() * 0.25);
+                                let height = px((bottom_track - top_track + 1) as f32 * track_height.as_f32());
 
                                 let left = self.beats_to_width(Beats::new(time_range.start)) + self.pan.x;
                                 let width = self.beats_to_width(Beats::new(time_range.end)) - self.beats_to_width(Beats::new(time_range.start));
