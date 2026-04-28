@@ -1,8 +1,7 @@
 # Volt DAW
 ![Volt DAW Banner](https://fs.infra.thered.sh/branding/volt/volt-banner.png)
 
-Volt is a custom DAW (digital audio workstation) that is primarily aimed at Linux and will be open-source. It uses eframe+egui for rendering, likely cpal for playback.
-It will have its own .wav implementation to integrate nicely with the rest of the DAW (as it is the most widely used format in music production), and other formats will use libraries for compatibility.
+Volt is a custom DAW (digital audio workstation) that is primarily aimed at Linux (with Windows and macOS support too) and is fully open-source. Built with gpui and cpal.
 
 Feel free to make improvements and additions to the DAW, and submit a PR!
 Additionally, you can also open issues with the DAW.
@@ -17,7 +16,7 @@ The DAW at the moment is highly unfinished and is currently primarily in the tes
 If anyone can volunteer to improve the DAW, please do! PRs are super welcome.
 
 Here's a screenshot:
-![Volt DAW current state](https://fs.infra.thered.sh/status/volt/volt-status-preview-4.png)
+![Volt DAW current state](./images/volt-preview-5.png)
 
 ## Our Roadmap:
 
@@ -38,18 +37,18 @@ We have a list of things we want to achieve, and here it is for easy editing and
     - [ ] Being able to import devices (that is, plugins, effects, VSTs or similar)
 - [ ] Playlist functionality
     - [x] Scrolling, scaling and similar UI functionality
-    - [ ] Time signatures, BPM and related
-        - **Note:** BPM is a thing now
-    - [ ] Playback of audio
-    - [ ] Fast waveform rendering
+    - [x] Time signatures, BPM and related
+    - [x] Playback of audio
+    - [x] Fast waveform rendering
     - [ ] Shortcuts
     - [ ] Arrangements
     - [ ] Importing other arrangements into an existing arrangement
 - [ ] Piano Roll/MIDI Editor
 - [ ] UI & UX
     - [x] Theming system
+        - This is WIP
     - [ ] Settings UI
-    - [x] About UI
+    - [ ] About UI
     - [ ] Primary workflow elements (such as editing modes/tools, like a pencil/brush for drawing in clips, or a selection tool for selecting elements)
     - [ ] Command Palette for easy search and execution of tasks
     - [ ] System for dialog boxes (with an option to make them movable)
@@ -68,19 +67,20 @@ We have a list of things we want to achieve, and here it is for easy editing and
     - [ ] Audio formats (support can be provided either through custom implementations or libraries)
         - [x] .wav support
         - [ ] .ogg support
-        - [ ] .mp3 support
+        - [x] .mp3 support
         - [ ] .m4a support
         - [ ] .opus support
-        - [ ] .flac support
+        - [x] .flac support
         - [ ] .alac support
         - [ ] .aac support
         - [ ] .wma support
         - [ ] .aiff support
-    - [x] Effects pipeline
+    - [ ] Effects pipeline
         - **Note:** this is work-in-progress!
     - [ ] Fast live audio processing (this means being able to take in an unpredictable input and processing it, like microphone input)
     - [ ] Support for ALSA, JACK, PulseAudio and PipeWire if possible
-    - [ ] Mixing pipeline
+    - [x] Mixing pipeline
+        - This is WIP
     - [ ] ASIO support (this is an issue primarily on Windows)
     - [ ] Audio stretching and squeezing with little to no noticable artifacts, while preserving or modifying formants
     - [ ] Potentially related to machine learning:
@@ -100,5 +100,5 @@ There are a number of important design decisions and routes we want to take for 
 - Reliability. The DAW shouldn't crash and shouldn't freeze whatsoever (there's a reason we chose Rust over languages like C++).
 - Never freeze. It's better to show the user the DAW is actually doing something (i.e. show a loading icon) rather than freezing the whole DAW. This means putting things off to other threads, and reserving the main thread for UI. We are in the multi-threaded era, and we can make use of this. This way, the DAW can not only *be* fast, but *feel* fast.
 - Power-efficiency. The DAW should consume minimal power while idle, as being able to make music on the go is important for many music producers.
-- Compatibility. Volt aims to function on Windows, Mac and Linux without major restrictions or downsides. This means potentially aiming to use compatibility tools (like wine or similar) to, as an example, provide support for Windows VST2 plugins on Linux.
+- Compatibility. Volt aims to function on Windows, macOS and Linux without major restrictions or downsides.
 - Support. Volt aims to maximize support for things like MIDI controllers, audio hardware or similar. This is not as high of a priority as all the other points, however, it is still important to us, as is to a lot of music producers.
