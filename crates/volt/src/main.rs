@@ -326,7 +326,7 @@ impl Volt {
     fn new(window: &mut Window, cx: &mut App, theme: Arc<ThemeColors>) -> Self {
         let focus_handle = cx.focus_handle();
         focus_handle.focus(window, cx);
-        
+
         Self {
             browser: cx.new(|_| BrowserView::new(Arc::clone(&theme))),
             playlist: cx.new(|_| PlaylistView::new(Arc::clone(&theme))),

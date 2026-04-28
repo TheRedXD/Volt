@@ -6,7 +6,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    AbsoluteLength, AppContext, Bounds, Context, DefiniteLength, InteractiveElement, IntoElement, Length, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div, hsla, pattern_slash, point, px, rems, rgba, size
+    AbsoluteLength, AppContext, Bounds, Context, DefiniteLength, FontWeight, InteractiveElement, IntoElement, Length, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div, hsla, pattern_slash, point, px, rems, rgb, rgba, size
 };
 use gpui_component::scroll::ScrollableElement;
 use itertools::Itertools;
@@ -276,6 +276,8 @@ impl Render for PlaylistView {
                     .relative()
                     .h_8()
                     .min_h_8()
+                    .border_b_1()
+                    .border_color(rgba(0xffffff04))
                     .id("ruler")
                     .on_hover(cx.listener(|view, bool, _, cx| {
                         if !bool {
@@ -724,14 +726,14 @@ impl Render for PlaylistView {
                                             .overflow_hidden()
                                             .rounded_md()
                                             .border_1()
-                                            .border_color(if is_selected { theme.playhead } else { theme.navbar_outline })
+                                            .border_color(if is_selected { rgb(0xffffff) } else { rgb(track.color) })
                                             .child(
                                                 div()
                                                     .id(format!("inner track clip thing {} {}", track_index, clip.id))
                                                     .h(px(16.))
                                                     .w_full()
-                                                    .bg(if is_selected { theme.playhead } else { theme.navbar_outline })
-                                                    .text_color(theme.bg_text)
+                                                    .bg(if is_selected { rgb(0xffffff) } else { rgb(track.color) })
+                                                    .text_color(rgba(0x000000a0))
                                                     .text_xs()
                                                     .px_1()
                                                     .child(clip.name.clone())
@@ -799,7 +801,7 @@ impl Render for PlaylistView {
                                                     .top(px(16.))
                                                     .bottom_0()
                                                     .w(self.beats_to_width(clip.data_len().beats(tempo)))
-                                                    .bg(theme.central_background)
+                                                    .bg({let mut color = rgb(track.color); color.a = 0.2; color})
                                                     .child(
                                                         canvas(|_, _, _| {}, {
                                                             let mut clip = clip.clone();
@@ -939,10 +941,11 @@ impl Render for PlaylistView {
                                             .top_0()
                                             .h_full()
                                             .w(gpui::Pixels::from(150.))
-                                            .bg(theme.central_background)
+                                            .bg(rgb(track.color))
                                             // .rounded_md()
                                             .border_1()
-                                            .border_color(theme.navbar_outline)
+                                            .border_color(rgba(0x00000040))
+                                            .text_color(rgba(0x000000a0))
                                             .id(track_index)
                                             .on_mouse_down(MouseButton::Left, cx.listener(|_, _: &gpui::MouseDownEvent, _, cx| {
                                                 cx.stop_propagation();
@@ -951,7 +954,7 @@ impl Render for PlaylistView {
                                             .line_height(DefiniteLength::Fraction(0.8))
                                             .text_sm()
                                             .p_1()
-                                            .child(format!("Track {}", track_index + 1))
+                                            .child(div().font_family("Inter").font_weight(FontWeight::BOLD).child(format!("Track {}", track_index + 1)))
                                             .child(div().text_sm().flex().gap_1().items_center().child("Gain").child(AdjustableInput {
                                                 value: 20. * track.gain.log10(),
                                                 theme: Arc::clone(&theme),

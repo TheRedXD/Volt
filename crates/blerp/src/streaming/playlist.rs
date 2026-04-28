@@ -776,6 +776,7 @@ impl Playlist {
                                 }),
                             ),
                         ],
+                        color: 0xffb3b3,
                         gain: 1.,
                     },
                     Track {
@@ -788,22 +789,24 @@ impl Playlist {
                                 offset: Beats(0.),
                             }),
                         )],
+                        color: 0xffd9b3,
                         gain: 1.,
                     },
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    Track {clips:vec![],gain:1.},
-                    
+                    Track {clips:vec![],color:0xffffb3,gain:1.},
+                    Track {clips:vec![],color:0xb3ffb3,gain:1.},
+                    Track {clips:vec![],color:0xb3ffe0,gain:1.},
+                    Track {clips:vec![],color:0xb3ffff,gain:1.},
+                    Track {clips:vec![],color:0xb3d9ff,gain:1.},
+                    Track {clips:vec![],color:0xb3b3ff,gain:1.},
+                    Track {clips:vec![],color:0xd9b3ff,gain:1.},
+                    Track {clips:vec![],color:0xffb3ff,gain:1.},
+                    Track {clips:vec![],color:0xffb3d9,gain:1.},
+                    Track {clips:vec![],color:0xffb3b3,gain:1.},
+                    Track {clips:vec![],color:0xffd9b3,gain:1.},
+                    Track {clips:vec![],color:0xffffb3,gain:1.},
+
                 ]
+
             },
             time_signature: TimeSignature::default(),
             tempo: Tempo::default(),
@@ -825,7 +828,7 @@ impl Playlist {
     pub fn add_clips(&mut self, track: usize, path: Arc<Path>, start: Time) -> SymphoniaResult<()> {
         let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
         let clips = SymphoniaClipData::from_path(path)?;
-        self.tracks.resize((track + clips.len()).max(self.tracks.len()), Track { clips: Vec::new(), gain: 1. });
+        self.tracks.resize((track + clips.len()).max(self.tracks.len()), Track { clips: Vec::new(), color: 0xffffff, gain: 1. });
         for (track, clip) in self.tracks.iter_mut().skip(track).zip(clips) {
             let clip = clip?;
             let span = info_span!("clip_add", ?clip);
