@@ -5,7 +5,8 @@ use crate::streaming::clip::Clip;
 pub struct Track {
     pub(crate) clips: Vec<Clip>,
     pub color: u32,
-    pub gain: f32
+    pub gain: f32,
+    pub enabled: bool
 }
 
 impl Default for Track {
@@ -17,7 +18,7 @@ impl Default for Track {
 impl Track {
     #[must_use]
     pub const fn new() -> Self {
-        Self { clips: Vec::new(), color: 0x000000, gain: 1. }
+        Self { clips: Vec::new(), color: 0x000000, gain: 1., enabled: true }
     }
 
     #[must_use]

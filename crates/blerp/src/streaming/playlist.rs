@@ -305,7 +305,7 @@ impl PlaylistAudio {
                                                     for c in 0..out_channels {
                                                         let src_c = if c < in_channels { c } else { 0 };
                                                         if dest_idx < buffer.len() {
-                                                            buffer[dest_idx] = data[frame * in_channels + src_c].mul_add(track.gain, buffer[dest_idx]);
+                                                            buffer[dest_idx] = data[frame * in_channels + src_c].mul_add(track.gain * if track.enabled { 1. } else { 0. }, buffer[dest_idx]);
                                                         }
                                                         dest_idx += 1;
                                                     }
@@ -416,7 +416,7 @@ impl PlaylistAudio {
                                                 let dest_start = destination.start * out_channels;
                                                 let dest_len = destination.len() * out_channels;
                                                 for (buffer_sample, decoded_sample) in buffer[dest_start..dest_start + dest_len].iter_mut().zip(&decoded) {
-                                                    *buffer_sample = (*decoded_sample).mul_add(track.gain, *buffer_sample);
+                                                    *buffer_sample = (*decoded_sample).mul_add(track.gain * if track.enabled { 1. } else { 0. }, *buffer_sample);
                                                 }
 
                                                 *state = Some((source.start + decoded.len() / out_channels, leftovers));
@@ -736,6 +736,16 @@ impl PlaylistAudio {
         }
         old
     }
+
+
+    pub fn update_track_enabled(&mut self, track: usize, enabled: bool) {
+        if let Some(t) = self.playlist.tracks.get_mut(track) {
+            t.enabled = enabled;
+        }
+        if let Some(out) = &self.out {
+            out.audio_engine_tx.send(AudioEngineMessage::Update(self.playlist.clone())).unwrap();
+        }
+    }
 }
 
 impl Playlist {
@@ -778,6 +788,7 @@ impl Playlist {
                         ],
                         color: 0xffb3b3,
                         gain: 1.,
+                        enabled: true
                     },
                     Track {
                         clips: vec![Clip::new(
@@ -791,20 +802,21 @@ impl Playlist {
                         )],
                         color: 0xffd9b3,
                         gain: 1.,
+                        enabled: true
                     },
-                    Track {clips:vec![],color:0xffffb3,gain:1.},
-                    Track {clips:vec![],color:0xb3ffb3,gain:1.},
-                    Track {clips:vec![],color:0xb3ffe0,gain:1.},
-                    Track {clips:vec![],color:0xb3ffff,gain:1.},
-                    Track {clips:vec![],color:0xb3d9ff,gain:1.},
-                    Track {clips:vec![],color:0xb3b3ff,gain:1.},
-                    Track {clips:vec![],color:0xd9b3ff,gain:1.},
-                    Track {clips:vec![],color:0xffb3ff,gain:1.},
-                    Track {clips:vec![],color:0xffb3d9,gain:1.},
-                    Track {clips:vec![],color:0xffb3b3,gain:1.},
-                    Track {clips:vec![],color:0xffd9b3,gain:1.},
-                    Track {clips:vec![],color:0xffffb3,gain:1.},
-                    Track {clips:vec![],color:0xffffff,gain:1.},
+                    Track {clips:vec![],color:0xffffb3,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xb3ffb3,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xb3ffe0,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xb3ffff,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xb3d9ff,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xb3b3ff,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xd9b3ff,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xffb3ff,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xffb3d9,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xffb3b3,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xffd9b3,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xffffb3,gain:1.,enabled:true},
+                    Track {clips:vec![],color:0xffffff,gain:1.,enabled:true},
 
                 ]
 
@@ -829,7 +841,7 @@ impl Playlist {
     pub fn add_clips(&mut self, track: usize, path: Arc<Path>, start: Time) -> SymphoniaResult<()> {
         let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
         let clips = SymphoniaClipData::from_path(path)?;
-        self.tracks.resize((track + clips.len()).max(self.tracks.len()), Track { clips: Vec::new(), color: 0xffffff, gain: 1. });
+        self.tracks.resize((track + clips.len()).max(self.tracks.len()), Track { clips: Vec::new(), color: 0xffffff, gain: 1., enabled: true });
         for (track, clip) in self.tracks.iter_mut().skip(track).zip(clips) {
             let clip = clip?;
             let span = info_span!("clip_add", ?clip);
