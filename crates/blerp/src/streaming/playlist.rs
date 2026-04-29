@@ -804,6 +804,7 @@ impl Playlist {
                     Track {clips:vec![],color:0xffb3b3,gain:1.},
                     Track {clips:vec![],color:0xffd9b3,gain:1.},
                     Track {clips:vec![],color:0xffffb3,gain:1.},
+                    Track {clips:vec![],color:0xffffff,gain:1.},
 
                 ]
 

@@ -411,6 +411,7 @@ const NAVBAR_ICON: &str = "navbar-icon";
 const PLAY_ICON: &str = "play-icon";
 const FILE_OTHER_ICON: &str = "file-other-icon";
 const FILE_AUDIO_ICON: &str = "file-audio-icon";
+const AUDIO_TRACK_ICON: &str = "audio-track-icon";
 
 fn main() {
     struct Assets;
@@ -421,6 +422,7 @@ fn main() {
                 PLAY_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/play-icon.svg")))),
                 FILE_OTHER_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_other.svg")))),
                 FILE_AUDIO_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_audio.svg")))),
+                AUDIO_TRACK_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/audio_track.svg")))),
                 _ => unimplemented!(),
             }
         }
@@ -431,6 +433,7 @@ fn main() {
     }
 
     application().with_assets(Assets).run(|cx: &mut App| {
+        gpui_component::init(cx);
         cx.text_system()
             .add_fonts(vec![
                 Cow::Borrowed(include_bytes!("fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf")),

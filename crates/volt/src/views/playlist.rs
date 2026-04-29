@@ -6,7 +6,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    AbsoluteLength, AppContext, Bounds, Context, DefiniteLength, FontWeight, InteractiveElement, IntoElement, Length, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div, hsla, pattern_slash, point, px, rems, rgb, rgba, size
+    AbsoluteLength, AppContext, Bounds, Context, DefiniteLength, FontWeight, InteractiveElement, IntoElement, Length, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div, hsla, img, pattern_slash, point, px, rems, rgb, rgba, size
 };
 use gpui_component::scroll::ScrollableElement;
 use itertools::Itertools;
@@ -16,6 +16,7 @@ use crate::{
     components::adjustable_input::AdjustableInput,
     theme::ThemeColors,
     views::browser::{Entry, EntryDragPayload},
+    AUDIO_TRACK_ICON
 };
 
 #[derive(Clone, Default)]
@@ -652,31 +653,68 @@ impl Render for PlaylistView {
                                     move |bounds, (), window, cx| {
                                         let Some(view) = view.upgrade().map(|entity| entity.read(cx)) else { return };
                                         let beats_per_measure = view.audio.playlist().time_signature.beats_per_measure;
-                                        let (measure_builder, beat_builder) = (0..=view.width_to_beats(bounds.size.width, window.rem_size()).u32() + beats_per_measure).fold(
-                                            (PathBuilder::stroke(px(2.)), PathBuilder::stroke(px(1.))),
-                                            |(mut measure_builder, mut beat_builder), beat| {
-                                                let builder = if beat % beats_per_measure == 0 { &mut measure_builder } else { &mut beat_builder };
-                                                let top = bounds.origin.tap_mut(|point| {
-                                                    point.x += (view.beats_to_width(Beats::from_u32(beat)) + rems(view.pan.x.0.rem_euclid(view.zoom.width.0) - view.zoom.width.0)).to_pixels(window.rem_size());
-                                                });
-                                                builder.move_to(top);
-                                                builder.line_to(top.tap_mut(|point| point.y = bounds.bottom()));
-                                                (measure_builder, beat_builder)
-                                            },
-                                        );
-                                        window.paint_path(measure_builder.build().unwrap(), view.theme.playlist_bar);
+
+                                        let snap_divisor = match view.snapping {
+                                            Snapping::Beats { divisor } => divisor,
+                                            Snapping::None => 1,
+                                        };
+
+                                        let total_beats = view.width_to_beats(bounds.size.width, window.rem_size()).u32() + beats_per_measure;
+
+                                        let mut measure_builder = PathBuilder::stroke(px(2.));
+                                        let mut beat_builder = PathBuilder::stroke(px(1.));
+                                        let mut step_builder = PathBuilder::stroke(px(0.5));
+
+                                        for beat in 0..=total_beats {
+                                            let top = bounds.origin.tap_mut(|point| {
+                                                point.x += (view.beats_to_width(Beats::from_u32(beat)) + rems(view.pan.x.0.rem_euclid(view.zoom.width.0) - view.zoom.width.0)).to_pixels(window.rem_size());
+                                            });
+                                            let bottom = top.tap_mut(|point| point.y = bounds.bottom());
+
+                                            if beat % beats_per_measure == 0 {
+                                                measure_builder.move_to(top);
+                                                measure_builder.line_to(bottom);
+                                            } else {
+                                                beat_builder.move_to(top);
+                                                beat_builder.line_to(bottom);
+                                            }
+
+                                            if snap_divisor > 1 {
+                                                for step in 1..snap_divisor {
+                                                    let step_beat_f = beat as f64 + step as f64 / snap_divisor as f64;
+                                                    let step_top = bounds.origin.tap_mut(|point| {
+                                                        point.x += (view.beats_to_width(Beats::new(step_beat_f)) + rems(view.pan.x.0.rem_euclid(view.zoom.width.0) - view.zoom.width.0)).to_pixels(window.rem_size());
+                                                    });
+                                                    let step_bottom = step_top.tap_mut(|point| point.y = bounds.bottom());
+                                                    step_builder.move_to(step_top);
+                                                    step_builder.line_to(step_bottom);
+                                                }
+                                            }
+                                        }
+
+                                        if snap_divisor > 1 {
+                                            window.paint_path(step_builder.build().unwrap(), view.theme.playlist_beat.tap_mut(|c| c.a *= 0.4));
+                                        }
                                         window.paint_path(beat_builder.build().unwrap(), view.theme.playlist_beat);
+                                        window.paint_path(measure_builder.build().unwrap(), view.theme.playlist_bar);
                                     }
                                 })
                                 .absolute()
                                 .inset_0()
                                 .h_full(),
                             )
+
                             .children(self.audio.playlist().tracks().iter().enumerate().map(|(track_index, track)| {
                                 div()
                                     .id(format!("track_bg_{}", track_index))
-                                    .border_b_1()
-                                    .border_color(rgba(0xffffff04))
+                                    .child(
+                                        div()
+                                            .absolute()
+                                            .w_full()
+                                            .h_full()
+                                            .border_b_1()
+                                            .border_color(rgba(0xffffff04))
+                                    )
                                     .relative()
                                     .h(self.zoom.height)
                                     .on_mouse_down(MouseButton::Left, cx.listener(move |view, event: &gpui::MouseDownEvent, window, cx| {
@@ -722,7 +760,7 @@ impl Render for PlaylistView {
                                             .top_0()
                                             .h_full()
                                             .w(length)
-                                            .bg(pattern_slash(hsla(0., 0., 0.2, 1.), 2., 5.))
+                                            .bg(if is_selected { pattern_slash(hsla(0., 0., 0.2, 0.5), 2., 5.) } else { pattern_slash(hsla(0., 0., 0.2, 1.), 2., 5.) })
                                             .overflow_hidden()
                                             .rounded_md()
                                             .border_1()
@@ -733,10 +771,16 @@ impl Render for PlaylistView {
                                                     .h(px(16.))
                                                     .w_full()
                                                     .bg(if is_selected { rgb(0xffffff) } else { rgb(track.color) })
-                                                    .text_color(rgba(0x000000a0))
+                                                    .text_color(rgba(0x000000c0))
                                                     .text_xs()
                                                     .px_1()
-                                                    .child(clip.name.clone())
+                                                    .child(
+                                                        div()
+                                                            .flex()
+                                                            .flex_row()
+                                                            .child(img(AUDIO_TRACK_ICON).size_4().mr(gpui::Pixels::from(2.)).opacity(0.6))
+                                                            .child(clip.name.clone())
+                                                    )
                                                     .on_mouse_down(MouseButton::Left, cx.listener({
                                                         let clip_id = clip.id;
                                                         move |view, event: &gpui::MouseDownEvent, window, cx| {
@@ -801,7 +845,7 @@ impl Render for PlaylistView {
                                                     .top(px(16.))
                                                     .bottom_0()
                                                     .w(self.beats_to_width(clip.data_len().beats(tempo)))
-                                                    .bg({let mut color = rgb(track.color); color.a = 0.2; color})
+                                                    .bg(if is_selected {let mut color = rgb(track.color); color.a = 0.4; color} else {let mut color = rgb(track.color); color.a = 0.2; color})
                                                     .child(
                                                         canvas(|_, _, _| {}, {
                                                             let mut clip = clip.clone();
@@ -883,7 +927,7 @@ impl Render for PlaylistView {
                                                                         .map(Result::unwrap);
 
                                                                     for path in paths {
-                                                                        window.paint_path(path, theme.accent);
+                                                                        window.paint_path(path, rgb(0xffffff));
                                                                     }
                                                                 }
                                                             }
@@ -940,8 +984,10 @@ impl Render for PlaylistView {
                                             .right_0()
                                             .top_0()
                                             .h_full()
-                                            .w(gpui::Pixels::from(150.))
+                                            .w(gpui::Pixels::from(200.))
+                                            .pr(gpui::Pixels::from(50.))
                                             .bg(rgb(track.color))
+                                            .child(div().absolute().w_full().h_full().mt(Pixels::from(12.)).pl(Pixels::from(4.)).ml(Pixels::from(-4.)).bg(rgba(0x00000080)))
                                             // .rounded_md()
                                             .border_1()
                                             .border_color(rgba(0x00000040))
@@ -950,12 +996,20 @@ impl Render for PlaylistView {
                                             .on_mouse_down(MouseButton::Left, cx.listener(|_, _: &gpui::MouseDownEvent, _, cx| {
                                                 cx.stop_propagation();
                                             }))
-                                            .overflow_y_scroll()
+                                            .overflow_y_hidden()
                                             .line_height(DefiniteLength::Fraction(0.8))
                                             .text_sm()
                                             .p_1()
-                                            .child(div().font_family("Inter").font_weight(FontWeight::BOLD).child(format!("Track {}", track_index + 1)))
-                                            .child(div().text_sm().flex().gap_1().items_center().child("Gain").child(AdjustableInput {
+                                            .child(div().font_family("Inter").font_weight(FontWeight::BOLD).child(
+                                                div()
+                                                    .flex()
+                                                    .flex_row()
+                                                    .items_center()
+                                                    .h(gpui::Pixels::from(12.))
+                                                    .child(img(AUDIO_TRACK_ICON).size_4().mt(gpui::Pixels::from(-3.)).mr(gpui::Pixels::from(2.)).opacity(0.6))
+                                                    .child(format!("Track {}", track_index + 1))
+                                            ))
+                                            .child(div().text_xs().text_color(rgba(0xffffffa0)).flex().gap_1().items_center().child("Gain").child(AdjustableInput {
                                                 value: 20. * track.gain.log10(),
                                                 theme: Arc::clone(&theme),
                                                 set: {
@@ -971,6 +1025,16 @@ impl Render for PlaylistView {
                                                 name: format!("Track {} gain", track_index + 1).into(),
                                                 default: 0.,
                                             }).child("dB"))
+                                            .child(
+                                                div()
+                                                    .absolute()
+                                                    .right_0()
+                                                    .top_0()
+                                                    .h_full()
+                                                    .w(gpui::Pixels::from(50.))
+                                                    .bg(rgb(track.color))
+                                                    .child(div().absolute().w_full().h_full().bg(rgba(0x00000080)))
+                                            )
                                             // .pipe(deferred)
                                     })
                                     .child(
