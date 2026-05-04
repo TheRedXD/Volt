@@ -36,9 +36,10 @@ use wayland_client::{
         wl_shm_pool, wl_surface,
     },
 };
-use wayland_protocols::wp::pointer_gestures::zv1::client::{
+use wayland_protocols::wp::{pointer_constraints::zv1::client::zwp_pointer_constraints_v1, pointer_gestures::zv1::client::{
     zwp_pointer_gesture_pinch_v1, zwp_pointer_gestures_v1,
-};
+}};
+use wayland_protocols::wp::pointer_constraints::zv1::client::zwp_locked_pointer_v1;
 use wayland_protocols::wp::primary_selection::zv1::client::zwp_primary_selection_offer_v1::{
     self, ZwpPrimarySelectionOfferV1,
 };
@@ -216,6 +217,8 @@ pub(crate) struct WaylandClientState {
     pub compositor_gpu: Option<CompositorGpuHint>,
     wl_seat: wl_seat::WlSeat, // TODO: Multi seat support
     wl_pointer: Option<wl_pointer::WlPointer>,
+    pointer_constraints: Option<zwp_pointer_constraints_v1::ZwpPointerConstraintsV1>,
+    locked_pointer: Option<zwp_locked_pointer_v1::ZwpLockedPointerV1>,
     pinch_gesture: Option<zwp_pointer_gesture_pinch_v1::ZwpPointerGesturePinchV1>,
     pinch_scale: f32,
     wl_keyboard: Option<wl_keyboard::WlKeyboard>,
@@ -606,6 +609,8 @@ impl WaylandClient {
             compositor_gpu,
             wl_seat: seat,
             wl_pointer: None,
+            locked_pointer: None,
+            pointer_constraints: None,
             wl_keyboard: None,
             pinch_gesture: None,
             pinch_scale: 1.0,

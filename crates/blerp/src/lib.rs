@@ -8,7 +8,7 @@ pub use processing::time::*;
 pub use streaming::{clip::*, track::*, playlist::*};
 
 pub mod utils {
-    use std::mem::{ManuallyDrop, MaybeUninit, transmute_copy};
+    use std::mem::{ManuallyDrop, MaybeUninit};
 
     // https://internals.rust-lang.org/t/should-there-by-an-array-zip-method/21611/5
     pub fn zip<T, U, const N: usize>(ts: [T; N], us: [U; N]) -> [(T, U); N] {
@@ -23,7 +23,7 @@ pub mod utils {
             zip[i].write((t, u));
         }
         // SAFETY: zip has been fully initialized
-        unsafe { transmute_copy(&zip) }
+        unsafe { MaybeUninit::<[_; N]>::from(zip).assume_init() }
     }
 }
 

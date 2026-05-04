@@ -133,6 +133,8 @@ impl Render for EntryDrag {
     }
 }
 
+const SUPPORTED_AUDIO_EXTENSIONS: &[&str] = &["flac", "mp3", "ogg", "opus", "wav", "wave"];
+
 impl Render for BrowserView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
@@ -293,6 +295,7 @@ impl Render for BrowserView {
                                                 )
                                                 .w(px(8.))
                                                 .h(px(8.))
+                                                .flex_shrink_0()
                                             } else {
                                                 canvas(
                                                     move |_, _, _| {},
@@ -314,13 +317,14 @@ impl Render for BrowserView {
                                                 )
                                                 .w(px(8.))
                                                 .h(px(8.))
+                                                .flex_shrink_0()
                                             }),
                                             EntryData::File => element.child(
                                                 img(
                                                     if path
                                                         .extension()
                                                         .and_then(OsStr::to_str)
-                                                        .is_some_and(|extension| ["flac", "mp3", "ogg", "opus", "wav", "wave"].iter().any(|audio| audio.eq_ignore_ascii_case(extension)))
+                                                        .is_some_and(|extension| SUPPORTED_AUDIO_EXTENSIONS.iter().any(|audio| audio.eq_ignore_ascii_case(extension)))
                                                     {
                                                         FILE_AUDIO_ICON
                                                     } else {

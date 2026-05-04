@@ -16,7 +16,7 @@ The DAW at the moment is highly unfinished and is currently primarily in the tes
 If anyone can volunteer to improve the DAW, please do! PRs are super welcome.
 
 Here's a screenshot:
-![Volt DAW current state](./images/volt-preview-5.png)
+![Volt DAW current state](./images/volt-preview-6.png)
 
 ## Our Roadmap:
 

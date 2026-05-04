@@ -191,36 +191,195 @@ impl RenderOnce for Navbar {
                     .child(div().w_px().bg(self.theme.navbar_outline).h_full())
                     .child(
                         div()
+                            .flex()
+                            .gap_0p5()
                             .p_2()
-                            .rounded_md()
-                            .bg(
-                                {
-                                    let mut color = Default::default();
-                                    let playlist = self.playlist.clone();
-                                    playlist.update(cx, |playlist, cx| {
-                                        if playlist.audio.playing() {
-                                            color = rgba(0xffffff20);
-                                        } else {
-                                            color = rgba(0xffffff00);
+                            .items_center()
+                            .child(
+                                div()
+                                    .id("seek button")
+                                    .p_2()
+                                    .rounded_md()
+                                    .bg(
+                                        {
+                                            let mut color = Default::default();
+                                            let playlist = self.playlist.clone();
+                                            playlist.update(cx, |playlist, cx| {
+                                                if playlist.auto_scroll {
+                                                    color = rgba(0xffffff20);
+                                                } else {
+                                                    color = rgba(0xffffff00);
+                                                }
+                                            });
+                                            color
                                         }
-                                    });
-                                    color
-                                }
+                                    )
+                                    .hover(|s|
+                                        s.bg({
+                                            let mut color = Default::default();
+                                            let playlist = self.playlist.clone();
+                                            playlist.update(cx, |playlist, cx| {
+                                                if playlist.auto_scroll {
+                                                    color = rgba(0xffffff40);
+                                                } else {
+                                                    color = rgba(0xffffff30);
+                                                }
+                                            });
+                                            color
+                                        })
+                                    )
+                                    .active(|s|
+                                        s.bg({
+                                            let mut color = Default::default();
+                                            let playlist = self.playlist.clone();
+                                            playlist.update(cx, |playlist, cx| {
+                                                if playlist.auto_scroll {
+                                                    color = rgba(0xffffff60);
+                                                } else {
+                                                    color = rgba(0xffffff50);
+                                                }
+                                            });
+                                            color
+                                        })
+                                    )
+                                    .child(img(SEEK_ICON).size_3())
+                                    .on_click({
+                                        let playlist = self.playlist.clone();
+                                        move |_, _, cx| {
+                                            playlist.update(cx, |playlist, cx| {
+                                                playlist.set_autoscroll(!playlist.auto_scroll);
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
                             )
-                            .child(img(PLAY_ICON).text_color(gpui::green()).size_3())
-                            .on_mouse_down(MouseButton::Left, {
-                                let playlist = self.playlist.clone();
-                                move |_, _, cx| {
-                                    playlist.update(cx, |playlist, cx| {
-                                        if playlist.audio.playing() {
-                                            playlist.audio.stop();
-                                        } else {
-                                            playlist.audio.play();
+                            .child(
+                                div()
+                                    .id("play button")
+                                    .p_2()
+                                    .rounded_md()
+                                    .bg(
+                                        {
+                                            let mut color = Default::default();
+                                            let playlist = self.playlist.clone();
+                                            playlist.update(cx, |playlist, cx| {
+                                                if playlist.audio.playing() {
+                                                    color = rgba(0xffffff20);
+                                                } else {
+                                                    color = rgba(0xffffff00);
+                                                }
+                                            });
+                                            color
                                         }
-                                        cx.notify();
-                                    });
-                                }
-                            })
+                                    )
+                                    .hover(|s|
+                                        s.bg({
+                                            let mut color = Default::default();
+                                            let playlist = self.playlist.clone();
+                                            playlist.update(cx, |playlist, cx| {
+                                                if playlist.audio.playing() {
+                                                    color = rgba(0xffffff40);
+                                                } else {
+                                                    color = rgba(0xffffff30);
+                                                }
+                                            });
+                                            color
+                                        })
+                                    )
+                                    .active(|s|
+                                        s.bg({
+                                            let mut color = Default::default();
+                                            let playlist = self.playlist.clone();
+                                            playlist.update(cx, |playlist, cx| {
+                                                if playlist.audio.playing() {
+                                                    color = rgba(0xffffff60);
+                                                } else {
+                                                    color = rgba(0xffffff50);
+                                                }
+                                            });
+                                            color
+                                        })
+                                    )
+                                    .child(img({
+                                        let mut icon = Default::default();
+                                        let playlist = self.playlist.clone();
+                                        playlist.update(cx, |playlist, cx| {
+                                            if playlist.audio.playing() {
+                                                icon = PAUSE_ICON;
+                                            } else {
+                                                icon = PLAY_ICON;
+                                            }
+                                        });
+                                        icon
+                                    }).size_3())
+                                    .on_click({
+                                        let playlist = self.playlist.clone();
+                                        move |_, _, cx| {
+                                            playlist.update(cx, |playlist, cx| {
+                                                if playlist.audio.playing() {
+                                                    playlist.audio.stop();
+                                                } else {
+                                                    playlist.audio.play();
+                                                }
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
+                            )
+                            .child(
+                                div()
+                                    .id("stop button")
+                                    .p_2()
+                                    .rounded_md()
+                                    .hover(|s|
+                                        s.bg(rgba(0xffffff40))
+                                    )
+                                    .active(|s|
+                                        s.bg(rgba(0xffffff60))
+                                    )
+                                    .child(img(STOP_ICON).size_3())
+                                    .on_click({
+                                        let playlist = self.playlist.clone();
+                                        move |_, _, cx| {
+                                            playlist.update(cx, |playlist, cx| {
+                                                if playlist.audio.playing() {
+                                                    playlist.audio.stop();
+                                                } else {
+                                                    playlist.audio.seek(Time::Samples(Samples::new(0.)));
+                                                    playlist.target_pan.x = Rems(0.);
+                                                }
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
+                            )
+                            .child(
+                                div()
+                                    .id("record button")
+                                    .p_2()
+                                    .rounded_md()
+                                    .hover(|s|
+                                        s.bg(rgba(0xffffff40))
+                                    )
+                                    .active(|s|
+                                        s.bg(rgba(0xffffff60))
+                                    )
+                                    .child(img(RECORD_ICON).size_3())
+                                    .on_click({
+                                        let playlist = self.playlist.clone();
+                                        move |_, _, cx| {
+                                            playlist.update(cx, |playlist, cx| {
+                                                // if playlist.audio.playing() {
+                                                //     playlist.audio.stop();
+                                                // } else {
+                                                //     playlist.audio.seek(Time::Samples(Samples::new(0.)));
+                                                //     playlist.target_pan.x = Rems(0.);
+                                                // }
+                                                cx.notify();
+                                            });
+                                        }
+                                    })
+                            ),
                     ),
             )
     }
@@ -339,6 +498,20 @@ impl Volt {
 impl Render for Volt {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .on_mouse_up_out(MouseButton::Left, cx.listener(|view, _, _, cx| {
+                let playlist = view.playlist.clone();
+                playlist.update(cx, |playlist, cx| {
+                    playlist.scrubbing_x = None;
+                    cx.notify();
+                });
+            }))
+            .on_mouse_up(MouseButton::Left, cx.listener(|view, _, _, cx| {
+                let playlist = view.playlist.clone();
+                playlist.update(cx, |playlist, cx| {
+                    playlist.scrubbing_x = None;
+                    cx.notify();
+                });
+            }))
             .track_focus(&self.focus_handle)
             .flex()
             .flex_col()
@@ -409,6 +582,12 @@ impl Render for Volt {
 
 const NAVBAR_ICON: &str = "navbar-icon";
 const PLAY_ICON: &str = "play-icon";
+const PAUSE_ICON: &str = "pause-icon";
+const STOP_ICON: &str = "stop-icon";
+const SEEK_ICON: &str = "seek-icon";
+const RECORD_ICON: &str = "record-icon";
+const RECORD_ARM_ICON: &str = "record-arm-icon";
+const SOLO_ICON: &str = "solo-icon";
 const FILE_OTHER_ICON: &str = "file-other-icon";
 const FILE_AUDIO_ICON: &str = "file-audio-icon";
 const AUDIO_TRACK_ICON: &str = "audio-track-icon";
@@ -420,6 +599,12 @@ fn main() {
             match path {
                 NAVBAR_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/navbar-icon.svg")))),
                 PLAY_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/play-icon.svg")))),
+                PAUSE_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/pause-icon.svg")))),
+                STOP_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/stop-icon.svg")))),
+                SEEK_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/seek-icon.svg")))),
+                RECORD_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/record-icon.svg")))),
+                RECORD_ARM_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/record-arm-icon.svg")))),
+                SOLO_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/solo-icon.svg")))),
                 FILE_OTHER_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_other.svg")))),
                 FILE_AUDIO_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_audio.svg")))),
                 AUDIO_TRACK_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/audio_track.svg")))),

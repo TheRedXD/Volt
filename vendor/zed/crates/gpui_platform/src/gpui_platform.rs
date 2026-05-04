@@ -11,7 +11,6 @@ pub fn background_executor() -> gpui::BackgroundExecutor {
 }
 
 pub fn application() -> gpui::Application {
-    println!("test");
     gpui::Application::with_platform(current_platform(false))
 }
 
