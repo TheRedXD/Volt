@@ -40,6 +40,11 @@ We have a list of things we want to achieve, and here it is for easy editing and
     - [x] Time signatures, BPM and related
     - [x] Playback of audio
     - [x] Fast waveform rendering
+    - [ ] Time stretching
+    - [ ] Clip configuration and editing
+    - [ ] Track configuration
+        - [ ] Routing
+        - [ ] Effects
     - [ ] Shortcuts
     - [ ] Arrangements
     - [ ] Importing other arrangements into an existing arrangement
