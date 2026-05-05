@@ -770,6 +770,8 @@ impl Playlist {
                             Clip::new(
                                 "Sine 1".to_string(),
                                 ClipData::Audio(AudioClipData { data: Arc::clone(&data), channels: 2 }),
+                                false,
+                                Arc::new([]),
                                 ClipTiming::Beats(ClipTimingBeats {
                                     start: Beats(0.),
                                     end: Beats(1.),
@@ -779,6 +781,8 @@ impl Playlist {
                             Clip::new(
                                 "Sine 2".to_string(),
                                 ClipData::Audio(AudioClipData { data: Arc::clone(&data), channels: 2 }),
+                                false,
+                                Arc::new([]),
                                 ClipTiming::Beats(ClipTimingBeats {
                                     start: Beats(2.),
                                     end: Beats(3.),
@@ -794,6 +798,8 @@ impl Playlist {
                         clips: vec![Clip::new(
                             "Sine 3".to_string(),
                             ClipData::Audio(AudioClipData { data: Arc::clone(&data), channels: 2 }),
+                            false,
+                            Arc::new([]),
                             ClipTiming::Beats(ClipTimingBeats {
                                 start: Beats(2.5),
                                 end: Beats(3.5),
@@ -849,6 +855,8 @@ impl Playlist {
             track.clips.push(Clip::new(
                 name.clone(),
                 ClipData::Symphonia(clip.clone()),
+                false,
+                Arc::new([]),
                 ClipTiming::Samples(ClipTimingSamples {
                     start: start.samples(self.tempo),
                     end: start.samples(self.tempo)

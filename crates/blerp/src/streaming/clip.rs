@@ -91,15 +91,19 @@ pub struct Clip {
     pub id: usize,
     pub name: String,
     pub(crate) data: ClipData,
+    pub(crate) is_stretched: bool,
+    pub(crate) stretched_samples: Arc<[f32]>,
     pub timing: ClipTiming,
 }
 
 impl Clip {
-    pub fn new(name: String, data: ClipData, timing: ClipTiming) -> Self {
+    pub fn new(name: String, data: ClipData, is_stretched: bool, stretched_samples: Arc<[f32]>, timing: ClipTiming) -> Self {
         Self {
             id: NEXT_CLIP_ID.fetch_add(1, Ordering::Relaxed),
             name,
             data,
+            is_stretched,
+            stretched_samples,
             timing,
         }
     }
@@ -110,6 +114,8 @@ impl Clip {
             id: NEXT_CLIP_ID.fetch_add(1, Ordering::Relaxed),
             name: self.name.clone(),
             data: self.data.clone(),
+            is_stretched: false,
+            stretched_samples: Arc::new([]),
             timing: self.timing,
         }
     }

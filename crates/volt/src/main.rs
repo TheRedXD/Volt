@@ -22,7 +22,7 @@ use gpui_platform::application;
 use itertools::Itertools;
 use tap::{Conv, Pipe, Tap};
 
-use crate::theme::{default, gray};
+use crate::{theme::{default, gray}, components::svg_icon::{IconRegistry, SvgIcon}};
 
 use crate::components::adjustable_input::AdjustableInput;
 use crate::theme::ThemeColors;
@@ -64,7 +64,8 @@ impl RenderOnce for Navbar {
                     .gap_1()
                     .items_center()
                     .rounded_md()
-                    .child(img(NAVBAR_ICON).size_6().mr_1())
+                    // .child(img(NAVBAR_ICON).size_6().mr_1())
+                    .child(div().child(SvgIcon::new(NAVBAR_ICON, 24, 24)).mr_1())
                     .child(
                         div()
                             .flex()
@@ -242,7 +243,7 @@ impl RenderOnce for Navbar {
                                             color
                                         })
                                     )
-                                    .child(img(SEEK_ICON).size_3())
+                                    .child(SvgIcon::new(SEEK_ICON, 12, 12))
                                     .on_click({
                                         let playlist = self.playlist.clone();
                                         move |_, _, cx| {
@@ -300,7 +301,7 @@ impl RenderOnce for Navbar {
                                             color
                                         })
                                     )
-                                    .child(img({
+                                    .child(SvgIcon::new({
                                         let mut icon = Default::default();
                                         let playlist = self.playlist.clone();
                                         playlist.update(cx, |playlist, cx| {
@@ -311,7 +312,7 @@ impl RenderOnce for Navbar {
                                             }
                                         });
                                         icon
-                                    }).size_3())
+                                    }, 12, 12))
                                     .on_click({
                                         let playlist = self.playlist.clone();
                                         move |_, _, cx| {
@@ -337,7 +338,7 @@ impl RenderOnce for Navbar {
                                     .active(|s|
                                         s.bg(rgba(0xffffff60))
                                     )
-                                    .child(img(STOP_ICON).size_3())
+                                    .child(SvgIcon::new(STOP_ICON, 12, 12))
                                     .on_click({
                                         let playlist = self.playlist.clone();
                                         move |_, _, cx| {
@@ -364,7 +365,7 @@ impl RenderOnce for Navbar {
                                     .active(|s|
                                         s.bg(rgba(0xffffff60))
                                     )
-                                    .child(img(RECORD_ICON).size_3())
+                                    .child(SvgIcon::new(RECORD_ICON, 12, 12))
                                     .on_click({
                                         let playlist = self.playlist.clone();
                                         move |_, _, cx| {
@@ -638,7 +639,15 @@ fn main() {
                 }),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| Volt::new(window, cx, Arc::new(gray()))),
+            |window, cx| {
+                let registry = IconRegistry::global(cx);
+                let volt_view = cx.new(|cx| Volt::new(window, cx, Arc::new(gray())));
+                cx.observe(&registry, {
+                    let volt_view = volt_view.clone();
+                    move |_, cx| cx.notify(volt_view.entity_id())
+                }).detach();
+                volt_view
+            },
         )
         .unwrap();
         cx.activate(true);

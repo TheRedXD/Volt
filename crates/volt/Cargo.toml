@@ -31,6 +31,9 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
 sum_tree = { git = "https://github.com/zed-industries/zed" }
 anyhow = { workspace = true }
+resvg = "0.47.0"
+tiny-skia = "0.12.0"
+smallvec = { version = "1.6", features = ["union", "const_new"] }
 
 # TEMPORARY FIX: Fix some platform support
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -1,3 +1,10 @@
+pub mod time_selection;
+pub mod snapping;
+pub mod clip;
+
+use time_selection::TimeSelection;
+use snapping::Snapping;
+
 use std::{array::from_fn, collections::{HashMap, HashSet}, sync::Arc, ops::Add, range::Range};
 
 use blerp::{Beats, Clip, ClipTiming, ClipTimingBeats, ClipTimingSamples, PlaylistAudio, SAMPLE_RATE, Samples, Time};
@@ -13,24 +20,18 @@ use itertools::Itertools;
 use tap::{Conv, Pipe, Tap};
 
 use crate::{
-    AUDIO_TRACK_ICON, RECORD_ARM_ICON, RECORD_ICON, SOLO_ICON, components::adjustable_input::AdjustableInput, theme::ThemeColors, views::browser::{Entry, EntryDragPayload}
+    AUDIO_TRACK_ICON, RECORD_ARM_ICON, RECORD_ICON, SOLO_ICON, components::adjustable_input::AdjustableInput, theme::ThemeColors, components::svg_icon::SvgIcon, views::browser::{Entry, EntryDragPayload}
 };
 
-#[derive(Clone, Default)]
-pub struct TimeSelection {
-    pub start_track: usize,
-    pub end_track: usize,
-    pub start_beats: f64,
-    pub end_beats: f64,
-}
+const MIPMAP_HIGH: usize = 1;
 
-impl TimeSelection {
-    pub fn normalized(&self) -> (std::ops::RangeInclusive<usize>, std::ops::Range<f64>) {
-        let track_range = self.start_track.min(self.end_track)..=self.start_track.max(self.end_track);
-        let time_range = self.start_beats.min(self.end_beats)..self.start_beats.max(self.end_beats);
-        (track_range, time_range)
-    }
-}
+#[derive(Clone)]
+struct PlayheadScrub;
+#[derive(Clone)]
+struct ScrollbarDrag;
+
+#[derive(Clone)]
+struct TimeSelectionDrag(usize);
 
 pub struct PlaylistView {
     pub audio: PlaylistAudio,
@@ -55,30 +56,6 @@ pub struct PlaylistView {
     pub time_selection: Option<TimeSelection>,
     pub time_selection_start_pos: Option<Point<Pixels>>,
     pub focus_handle: Option<gpui::FocusHandle>,
-}
-
-const MIPMAP_HIGH: usize = 1;
-
-#[derive(Clone)]
-struct PlayheadScrub;
-#[derive(Clone)]
-struct ScrollbarDrag;
-#[derive(Clone)]
-struct ClipDrag;
-
-#[derive(Clone)]
-struct TimeSelectionDrag(usize);
-
-#[derive(Clone)]
-struct ClipResizeLeft {
-    clip_id: usize,
-    initial_timing: ClipTiming,
-}
-
-#[derive(Clone)]
-struct ClipResizeRight {
-    clip_id: usize,
-    initial_timing: ClipTiming,
 }
 
 impl PlaylistView {
@@ -171,20 +148,6 @@ impl PlaylistView {
 
     pub fn set_autoscroll(&mut self, value: bool) {
         self.auto_scroll = value;
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum Snapping {
-    None,
-    Beats {
-        divisor: u32,
-    },
-}
-
-impl Default for Snapping {
-    fn default() -> Self {
-        Self::Beats { divisor: 4 }
     }
 }
 
@@ -460,7 +423,7 @@ impl Render for PlaylistView {
                             cx.notify();
                         }
                     }))
-                    .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<ClipDrag>, window, cx| {
+                    .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<clip::ClipDrag>, window, cx| {
                         let Some((leader_id, start_pos, initial_state)) = &view.dragging_clips else { return };
                         let dx = event.event.position.x - start_pos.x;
                         let dy = event.event.position.y - start_pos.y;
@@ -517,7 +480,7 @@ impl Render for PlaylistView {
                             cx.notify();
                         }
                     }))
-                    .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<ClipResizeLeft>, window, cx| {
+                    .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<clip::ClipResizeLeft>, window, cx| {
                         let drag = &event.drag(cx);
                         let Some(start_pos) = view.resizing_clip_start else { return };
                         let dx = event.event.position.x - start_pos.x;
@@ -548,7 +511,7 @@ impl Render for PlaylistView {
                         )]));
                         cx.notify();
                     }))
-                    .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<ClipResizeRight>, window, cx| {
+                    .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<clip::ClipResizeRight>, window, cx| {
                         let drag = &event.drag(cx);
                         let Some(start_pos) = view.resizing_clip_start else { return };
                         let dx = event.event.position.x - start_pos.x;
@@ -817,236 +780,9 @@ impl Render for PlaylistView {
                                                 let beats = clip.timing.as_beats(tempo);
                                                 let start = self.beats_to_width(beats.start) + self.pan.x;
                                                 let length = self.beats_to_width(beats.len());
+                                                let tempo_length = self.beats_to_width(clip.data_len().beats(tempo));
 
-                                                if start.0 + length.0 < 0.0 || start.0 > culling_view_width_rems {
-                                                    return None;
-                                                }
-
-                                                let is_selected = self.selected_clips.contains(&clip.id);
-
-                                                Some(div()
-                                                    .absolute()
-                                                    .left(start)
-                                                    .top_0()
-                                                    .h_full()
-                                                    .w(length)
-                                                    // .bg(if is_selected { pattern_slash(hsla(0., 0., 0.2, 0.5), 2., 5.) } else { pattern_slash(hsla(0., 0., 0.2, 1.), 2., 5.) })
-                                                    .overflow_hidden()
-                                                    .rounded_md()
-                                                    .border_1()
-                                                    .border_color(if is_selected { rgb(0xffffff) } else { rgb(track.color) })
-                                                    .child(
-                                                        div()
-                                                            .id(format!("inner track clip thing {} {}", track_index, clip.id))
-                                                            .h(px(16.))
-                                                            .w_full()
-                                                            .bg(if is_selected { rgb(0xffffff) } else { rgb(track.color) })
-                                                            .text_color(rgba(0x000000c0))
-                                                            .text_xs()
-                                                            .px_1()
-                                                            .child(
-                                                                div()
-                                                                    .flex()
-                                                                    .flex_row()
-                                                                    .child(img(AUDIO_TRACK_ICON).size_4().mr(gpui::Pixels::from(2.)).opacity(0.6))
-                                                                    .child(clip.name.clone())
-                                                            )
-                                                            .on_mouse_down(MouseButton::Left, cx.listener({
-                                                                let clip_id = clip.id;
-                                                                move |view, event: &gpui::MouseDownEvent, window, cx| {
-                                                                    cx.stop_propagation();
-                                                                    view.time_selection = None;
-                                                                    if event.modifiers.shift {
-                                                                        if view.selected_clips.contains(&clip_id) {
-                                                                            view.selected_clips.remove(&clip_id);
-                                                                        } else {
-                                                                            view.selected_clips.insert(clip_id);
-                                                                        }
-                                                                    } else {
-                                                                        if !view.selected_clips.contains(&clip_id) {
-                                                                            view.selected_clips.clear();
-                                                                            view.selected_clips.insert(clip_id);
-                                                                        }
-                                                                    }
-
-                                                                    let mut initial = HashMap::new();
-                                                                    for (t_idx, t) in view.audio.playlist().tracks().iter().enumerate() {
-                                                                        for c in t.clips() {
-                                                                            if view.selected_clips.contains(&c.id) {
-                                                                                initial.insert(c.id, (t_idx, c.timing));
-                                                                            }
-                                                                    }
-                                                                    }
-                                                                    view.dragging_clips = Some((clip_id, event.position, initial));
-
-                                                                    if let Some(focus) = &view.focus_handle {
-                                                                        focus.focus(window, cx);
-                                                                    }
-
-                                                                    cx.notify();
-                                                                }
-                                                            }))
-                                                            .on_mouse_up(MouseButton::Left, cx.listener(|view, _, _, _| {
-                                                                view.dragging_clips = None;
-                                                            }))
-                                                            .on_mouse_down(MouseButton::Right, cx.listener({
-                                                                let clip_id = clip.id;
-                                                                move |view, _, window, cx| {
-                                                                    cx.stop_propagation();
-                                                                    view.time_selection = None;
-                                                                    let mut to_delete = view.selected_clips.clone();
-                                                                    to_delete.insert(clip_id);
-                                                                    view.audio.delete_clips(&to_delete.into_iter().collect::<Vec<_>>());
-                                                                    view.selected_clips.clear();
-
-                                                                    if let Some(focus) = &view.focus_handle {
-                                                                        focus.focus(window, cx);
-                                                                    }
-
-                                                                    cx.notify();
-                                                                }
-                                                            }))
-                                                            .on_drag(ClipDrag, |_, _, _, cx| cx.new(|_| gpui::Empty))
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .absolute()
-                                                            .left_0()
-                                                            .top(px(16.))
-                                                            .bottom_0()
-                                                            .w(self.beats_to_width(clip.data_len().beats(tempo)))
-                                                            .bg(if is_selected {let mut color = rgb(track.color); color.a = 0.4; color} else {let mut color = rgb(track.color); color.a = 0.2; color})
-                                                            .child(
-                                                                canvas(|_, _, _| {}, {
-                                                                    let mut clip = clip.clone();
-                                                                    let width = self.beats_to_width(clip.data_len().beats(tempo)).to_pixels(window.rem_size());
-                                                                    let window_size = clip.data_len().samples(tempo).f64() / width.to_f64();
-                                                                    let view = cx.entity().downgrade();
-                                                                    let theme = Arc::clone(&theme);
-                                                                    move |clip_bounds, (), window, cx| {
-                                                                        let Some(view_entity) = view.upgrade() else { return; };
-
-                                                                        let level = view_entity
-                                                                            .update(cx, |view, _| {
-                                                                                let levels = view.clip_waveforms.entry(clip.id).or_insert_with(|| {
-                                                                                    let base_channels = clip.base_minmax_mipmap(tempo, MIPMAP_HIGH).unwrap();
-
-                                                                                    base_channels.into_iter().map(|base| {
-                                                                                        let max = 10;
-                                                                                        (0..max).fold(Vec::with_capacity(max).tap_mut(|levels| levels.push(base)), |mut levels, _| {
-                                                                                            let from = levels.last().unwrap();
-                                                                                            levels.push(
-                                                                                                from.chunks(2)
-                                                                                                    .map(|chunk| match chunk {[a, b] => Range::from(a.start.min(b.start)..a.end.max(b.end)),
-                                                                                                        [a] => Range::from(a.start..a.end),[] => Range::default(),
-                                                                                                        _ => unreachable!(),
-                                                                                                    })
-                                                                                                    .collect(),
-                                                                                            );
-                                                                                            levels
-                                                                                        })
-                                                                                    }).collect()
-                                                                                });
-                                                                                let level = (window_size / MIPMAP_HIGH as f64).log2().floor().max(0.) as usize;
-                                                                                level.min(levels[0].len() - 1)
-                                                                            });
-
-                                                                        let view_reader = view_entity.read(cx);
-                                                                        let Some(channels_waveforms) = view_reader.clip_waveforms.get(&clip.id) else { return; };
-
-                                                                        let num_channels = channels_waveforms.len();
-                                                                        if num_channels == 0 { return; }
-                                                                        let channel_height = clip_bounds.size.height / num_channels as f32;
-
-                                                                        let clip_left = clip_bounds.left();
-                                                                        let visible_bounds = clip_bounds.intersect(&window.bounds());
-                                                                        if visible_bounds.is_empty() {
-                                                                            return;
-                                                                        }
-
-                                                                        let step = window_size / (MIPMAP_HIGH << level) as f64;
-
-                                                                        for (c, channel_levels) in channels_waveforms.iter().enumerate() {
-                                                                            let waveform = channel_levels.get(level).unwrap();
-                                                                            let center_y = clip_bounds.top() + channel_height * c as f32 + channel_height / 2.0;
-
-                                                                            let start_x_usize = (visible_bounds.left() - clip_left).conv::<usize>();
-                                                                            let end_x_usize = width.min(visible_bounds.left() - clip_left + visible_bounds.size.width).conv::<usize>();
-
-                                                                            if start_x_usize >= end_x_usize {
-                                                                                continue;
-                                                                            }
-
-                                                                            let paths = (start_x_usize..end_x_usize)
-                                                                                .fold(
-                                                                                    from_fn(|i| {
-                                                                                        let mut b = PathBuilder::stroke(px(2.));
-                                                                                        let start_range = waveform.get((start_x_usize as f64 * step) as usize).copied().unwrap_or_default();
-                                                                                        let start_y = if i == 0 { start_range.start } else { start_range.end };
-                                                                                        b.move_to(point(start_x_usize.conv::<Pixels>() + clip_left, center_y + channel_height / 2. * start_y));
-                                                                                        b
-                                                                                    }),
-                                                                                    |mut builders:[_; 2], x| {
-                                                                                        let range = waveform.get((x as f64 * step) as usize).copied().unwrap_or_default();
-                                                                                        builders[0].line_to(point(x.conv::<Pixels>() + clip_left, center_y + channel_height / 2. * range.start));
-                                                                                        builders[1].line_to(point(x.conv::<Pixels>() + clip_left, center_y + channel_height / 2. * range.end));
-                                                                                        builders
-                                                                                    },
-                                                                                )
-                                                                                .map(PathBuilder::build)
-                                                                                .map(Result::unwrap);
-
-                                                                            for path in paths {
-                                                                                window.paint_path(path, rgb(0xffffff));
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                })
-                                                                .size_full(),
-                                                            )
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .id(format!("clip_resize_left_{}", clip.id))
-                                                            .absolute()
-                                                            .left_0()
-                                                            .top_0()
-                                                            .bottom_0()
-                                                            .w(px(8.))
-                                                            .cursor_col_resize()
-                                                            .on_mouse_down(MouseButton::Left, cx.listener(|view, event: &gpui::MouseDownEvent, window, cx| {
-                                                                cx.stop_propagation();
-                                                                view.resizing_clip_start = Some(event.position);
-                                                                if let Some(focus) = &view.focus_handle {
-                                                                    focus.focus(window, cx);
-                                                                }
-                                                            }))
-                                                            .on_mouse_up(MouseButton::Left, cx.listener(|view, _, _, _| {
-                                                                view.resizing_clip_start = None;
-                                                            }))
-                                                            .on_drag(ClipResizeLeft { clip_id: clip.id, initial_timing: clip.timing }, |_, _, _, cx| cx.new(|_| gpui::Empty)),
-                                                    )
-                                                    .child(
-                                                        div()
-                                                            .id(format!("clip_resize_right_{}", clip.id))
-                                                            .absolute()
-                                                            .right_0()
-                                                            .top_0()
-                                                            .bottom_0()
-                                                            .w(px(8.))
-                                                            .cursor_col_resize()
-                                                            .on_mouse_down(MouseButton::Left, cx.listener(|view, event: &gpui::MouseDownEvent, window, cx| {
-                                                                cx.stop_propagation();
-                                                                view.resizing_clip_start = Some(event.position);
-                                                                if let Some(focus) = &view.focus_handle {
-                                                                    focus.focus(window, cx);
-                                                                }
-                                                            }))
-                                                            .on_mouse_up(MouseButton::Left, cx.listener(|view, _, _, _| {
-                                                                view.resizing_clip_start = None;
-                                                            }))
-                                                            .on_drag(ClipResizeRight { clip_id: clip.id, initial_timing: clip.timing }, |_, _, _, cx| cx.new(|_| gpui::Empty)),
-                                                    ))
+                                                clip::clip(beats, start, length, tempo_length, self.selected_clips.clone(), culling_view_width_rems, clip, track, tempo, track_index, theme.clone(), window, cx)
                                             }))
                                             .child({
                                                 div()
@@ -1076,7 +812,7 @@ impl Render for PlaylistView {
                                                             .flex_row()
                                                             .items_center()
                                                             .h(gpui::Pixels::from(12.))
-                                                            .child(img(AUDIO_TRACK_ICON).size_4().mt(gpui::Pixels::from(-3.)).mr(gpui::Pixels::from(2.)).opacity(0.6))
+                                                            .child(div().child(SvgIcon::new(AUDIO_TRACK_ICON, 16, 16)).mt(gpui::Pixels::from(-3.)).mr(gpui::Pixels::from(2.)).opacity(0.6))
                                                             .child(format!("Track {}", track_index + 1))
                                                     ))
                                                     .child(div().text_xs().text_color(rgba(0xffffffa0)).flex().gap_1().items_center().child("Gain").child(AdjustableInput {
@@ -1152,7 +888,7 @@ impl Render for PlaylistView {
                                                                                     .rounded_sm()
                                                                                     .bg(rgba(0x171717a0))
                                                                                     .border_color(rgba(0x00000080))
-                                                                                    .child(img(SOLO_ICON).size_3())
+                                                                                    .child(SvgIcon::new(SOLO_ICON, 12, 12))
                                                                             )
                                                                             .child(
                                                                                 div()
@@ -1165,7 +901,7 @@ impl Render for PlaylistView {
                                                                                     .rounded_sm()
                                                                                     .bg(rgba(0x171717a0))
                                                                                     .border_color(rgba(0x00000080))
-                                                                                    .child(img(RECORD_ARM_ICON).size_3())
+                                                                                    .child(SvgIcon::new(RECORD_ARM_ICON, 12, 12))
                                                                             )
                                                                     )
                                                             )

@@ -14,3 +14,4 @@ parking_lot = "0.12.4"
 ringbuf = "0.4.8"
 symphonia = { version = "0.5.4", features = ["all"] }
 tap = "1.0.1"
+timestretch = "0.4.0"
