@@ -5,7 +5,7 @@ use std::{
     borrow::Cow,
     fmt::Display,
     ops::{DerefMut, Sub, SubAssign},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
     time::Instant,
 };
 
@@ -481,6 +481,7 @@ struct Volt {
     browser_size: f32,
     theme: Arc<ThemeColors>,
     focus_handle: FocusHandle,
+    show_browser: Arc<RwLock<bool>>,
 }
 impl Volt {
     fn new(window: &mut Window, cx: &mut App, theme: Arc<ThemeColors>) -> Self {
@@ -492,7 +493,8 @@ impl Volt {
             playlist: cx.new(|_| PlaylistView::new(Arc::clone(&theme))),
             browser_size: 0.3,
             theme,
-            focus_handle
+            focus_handle,
+            show_browser: Arc::new(RwLock::new(true)),
         }
     }
 }
@@ -543,8 +545,8 @@ impl Render for Volt {
                     .flex_grow()
                     .flex()
                     .min_h_0()
-                    .child(div().flex().flex_col().w(DefiniteLength::Fraction(self.browser_size)).child(self.browser.clone()))
-                    .child({
+                    .child(if *self.show_browser.clone().read().unwrap() {div().flex().flex_col().w(DefiniteLength::Fraction(self.browser_size)).child(self.browser.clone())} else {div()})
+                    .child(if *self.show_browser.clone().read().unwrap() {
                         struct Payload(Point<Pixels>, f32);
                         div()
                             .w_8()
@@ -560,7 +562,7 @@ impl Render for Volt {
                                 app.browser_size = (event.drag(cx).1 + ((event.event.position - event.drag(cx).0).x) / window.bounds().size.width).clamp(0.1, 0.9);
                             }))
                             .pipe(deferred)
-                    })
+                    } else {div().pipe(deferred)})
                     .child(self.playlist.clone()),
             )
             .child(
@@ -572,8 +574,32 @@ impl Render for Volt {
                     .p_2()
                     .items_center()
                     .text_sm()
-                    .child(div().child(concat!("Volt ", env!("CARGO_PKG_VERSION"))))
-                    .child(div().child("Highly WIP, alpha build"))
+                    .child(
+                        div()
+                            .id("browser toggle")
+                            .cursor_pointer()
+                            .child(SvgIcon::new(BROWSER_ICON, 16, 16))
+                            .opacity(if *self.show_browser.read().unwrap() { 1.0 } else { 0.2 })
+                            .p_1()
+                            .on_click({
+                                let show_browser_clone = self.show_browser.clone();
+                                let value = *show_browser_clone.read().unwrap();
+                                move |_, _, _| {
+                                    *show_browser_clone.write().unwrap() = !value;
+                                }
+                            })
+                    )
+                    .child(div().absolute().h(px(20.)).w(px(1.)).bg(rgba(0xffffff20)).left(px(38.)))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(div().child(concat!("Volt ", env!("CARGO_PKG_VERSION"))))
+                            .child(div().h(px(20.)).w(px(1.)).bg(rgba(0xffffff20)))
+                            .child(div().child("Highly WIP, alpha build"))
+                    )
                     .pipe(deferred),
             )
     }
@@ -592,6 +618,7 @@ const SOLO_ICON: &str = "solo-icon";
 const FILE_OTHER_ICON: &str = "file-other-icon";
 const FILE_AUDIO_ICON: &str = "file-audio-icon";
 const AUDIO_TRACK_ICON: &str = "audio-track-icon";
+const BROWSER_ICON: &str = "browser-icon";
 
 fn main() {
     struct Assets;
@@ -609,6 +636,7 @@ fn main() {
                 FILE_OTHER_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_other.svg")))),
                 FILE_AUDIO_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_audio.svg")))),
                 AUDIO_TRACK_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/audio_track.svg")))),
+                BROWSER_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/browser/toggle.svg")))),
                 _ => unimplemented!(),
             }
         }
