@@ -1,7 +1,7 @@
 # Volt DAW
 ![Volt DAW Banner](https://fs.infra.thered.sh/branding/volt/volt-banner.png)
 
-Volt is a custom DAW (digital audio workstation) that is primarily aimed at Linux (with Windows and macOS support too) and is fully open-source. Built with gpui and cpal.
+Volt is a custom DAW (digital audio workstation) that is primarily aimed at Linux (with Windows and macOS support too) and is fully open-source. Built with gpui-ce and cpal.
 
 Feel free to make improvements and additions to the DAW, and submit a PR!
 Additionally, you can also open issues with the DAW.
@@ -16,7 +16,7 @@ The DAW at the moment is highly unfinished and is currently primarily in the tes
 If anyone can volunteer to improve the DAW, please do! PRs are super welcome.
 
 Here's a screenshot:
-![Volt DAW current state](./images/volt-preview-6.png)
+![Volt DAW current state](./images/volt-preview-7.png)
 
 ## Our Roadmap:
 

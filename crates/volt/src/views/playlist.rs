@@ -930,7 +930,7 @@ impl Render for PlaylistView {
                                                         let start =
                                                             Time::Beats(view.width_to_beats(window.mouse_position().relative_to(&view.bounds.origin).x - view.pan.x.to_pixels(window.rem_size()), window.rem_size()));
                                                         view.audio.update_playlist(|playlist| {
-                                                            playlist.add_clips(track_index, Arc::clone(path), start);
+                                                            playlist.add_clips(track_index, Arc::clone(&path), start);
                                                         });
                                                         cx.notify();
                                                     }))

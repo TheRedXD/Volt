@@ -617,6 +617,11 @@ const RECORD_ARM_ICON: &str = "record-arm-icon";
 const SOLO_ICON: &str = "solo-icon";
 const FILE_OTHER_ICON: &str = "file-other-icon";
 const FILE_AUDIO_ICON: &str = "file-audio-icon";
+const FILE_AUDIO_WAV_ICON: &str = "file-audio-wav-icon";
+const FILE_AUDIO_OGG_ICON: &str = "file-audio-ogg-icon";
+const FILE_AUDIO_MP3_ICON: &str = "file-audio-mp3-icon";
+const FILE_AUDIO_OPUS_ICON: &str = "file-audio-opus-icon";
+const FILE_AUDIO_FLAC_ICON: &str = "file-audio-flac-icon";
 const AUDIO_TRACK_ICON: &str = "audio-track-icon";
 const BROWSER_ICON: &str = "browser-icon";
 
@@ -635,6 +640,11 @@ fn main() {
                 SOLO_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/solo-icon.svg")))),
                 FILE_OTHER_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_other.svg")))),
                 FILE_AUDIO_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_audio.svg")))),
+                FILE_AUDIO_WAV_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_wav.svg")))),
+                FILE_AUDIO_OGG_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_ogg.svg")))),
+                FILE_AUDIO_MP3_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_mp3.svg")))),
+                FILE_AUDIO_OPUS_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_opus.svg")))),
+                FILE_AUDIO_FLAC_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/file_flac.svg")))),
                 AUDIO_TRACK_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/audio_track.svg")))),
                 BROWSER_ICON => Ok(Some(Cow::Borrowed(include_bytes!("images/icons/browser/toggle.svg")))),
                 _ => unimplemented!(),

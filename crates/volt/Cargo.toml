@@ -26,9 +26,10 @@ unicode-truncate = "2.0.0"
 symphonia = { version = "0.5.4", features = ["all"] }
 strsim = "0.11.1"
 unhygienic2 = "0.1.0"
-gpui = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
-gpui-component = { git = "https://github.com/longbridge/gpui-component" }
-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "wayland", "x11"] }
+gpui = { git = "https://github.com/gpui-ce/gpui-ce" }
+gpui_platform = { git = "https://github.com/gpui-ce/gpui-ce" }
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "277f220a6196572116a8fd84fba6c36187094cab", features = ["tree-sitter-languages"] }
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "277f220a6196572116a8fd84fba6c36187094cab", package = "gpui-component-assets" }
 sum_tree = { git = "https://github.com/zed-industries/zed" }
 anyhow = { workspace = true }
 resvg = "0.47.0"
