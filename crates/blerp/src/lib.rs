@@ -5,7 +5,7 @@ mod read;
 mod streaming;
 
 pub use processing::time::*;
-pub use streaming::{clip::*, track::*, playlist::*};
+pub use streaming::{clip::*, playlist::*, track::*};
 
 pub mod utils {
     use std::mem::{ManuallyDrop, MaybeUninit};
@@ -27,4 +27,4 @@ pub mod utils {
     }
 }
 
-pub const SAMPLE_RATE: f64 = 44100.;
+pub const SAMPLE_RATE: f64 = 48000.;

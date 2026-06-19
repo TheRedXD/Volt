@@ -10,7 +10,7 @@ publish = false
 
 [workspace.dependencies]
 # Volt internal deps
-cpal = "0.16.0"
+cpal = "0.18.1"
 volt-waveform = { git = "https://github.com/TheRedXD/volt-waveform-rs", branch = "master" }
 anyhow = "1.0.86"
 itertools = "0.14.0"

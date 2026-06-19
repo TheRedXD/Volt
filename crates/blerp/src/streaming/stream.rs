@@ -4,7 +4,7 @@ use super::{
     error::{StreamingError, StreamingResult},
 };
 use cpal::{
-    BufferSize, SampleFormat, SampleRate, Stream, StreamConfig, StreamError,
+    BufferSize, ErrorKind, SampleFormat, SampleRate, Stream, StreamConfig,
     traits::{DeviceTrait, StreamTrait},
 };
 use crossbeam_channel::{Receiver, Sender, TryRecvError};
@@ -104,7 +104,10 @@ impl AudioStream {
 
         info!(
             "Creating audio stream: device='{:?}', sample_rate={}, channels={}, buffer_size={}",
-            device.name, config.sample_rate.0, config.channels, buffer_size
+            device.description.name(),
+            config.sample_rate,
+            config.channels,
+            buffer_size
         );
 
         let stream = Self {
@@ -120,7 +123,7 @@ impl AudioStream {
             is_running: Arc::new(AtomicBool::new(false)),
             volume: Arc::new(Mutex::new(1.0)),
             stats: Arc::new(StreamStats::default()),
-            sample_rate: config.sample_rate.0,
+            sample_rate: config.sample_rate,
             channel_count: config.channels as usize,
         };
 
@@ -147,7 +150,8 @@ impl AudioStream {
         let stream = self.create_cpal_stream()?;
 
         // Start the stream
-        stream.play().map_err(StreamingError::PlayStream)?;
+        // stream.play().map_err(StreamingError::PlayStream)?;
+        stream.play().unwrap(); // TODO: fix unwrap
 
         self.stream = Some(stream);
         self.is_running.store(true, Ordering::SeqCst);
@@ -251,7 +255,7 @@ impl AudioStream {
         }
 
         self.config = config;
-        self.sample_rate = self.config.sample_rate.0;
+        self.sample_rate = self.config.sample_rate;
         self.channel_count = self.config.channels as usize;
 
         if was_running {
@@ -286,7 +290,8 @@ impl AudioStream {
 
     /// Get optimal configuration for the device.
     fn get_optimal_config(device: &Device, target_sample_rate: u32, target_channels: usize) -> StreamingResult<StreamConfig> {
-        let supported_configs = device.cpal_device.supported_output_configs().map_err(StreamingError::SupportedConfigs)?;
+        // let supported_configs = device.cpal_device.supported_output_configs().map_err(StreamingError::SupportedConfigs)?;
+        let supported_configs = device.cpal_device.supported_output_configs().unwrap(); // TODO: fix unwrap
 
         // Find the best matching configuration.
         let mut best_config = None;
@@ -294,8 +299,8 @@ impl AudioStream {
 
         for config_range in supported_configs {
             let channels = config_range.channels() as usize;
-            let min_rate = config_range.min_sample_rate().0;
-            let max_rate = config_range.max_sample_rate().0;
+            let min_rate = config_range.min_sample_rate();
+            let max_rate = config_range.max_sample_rate();
 
             // Skip if channel count doesn't match and can't be handled
             if channels != target_channels && channels < target_channels {
@@ -340,13 +345,13 @@ impl AudioStream {
 
         let config = StreamConfig {
             channels: config_range.channels(),
-            sample_rate: SampleRate(sample_rate),
+            sample_rate: sample_rate,
             buffer_size: BufferSize::Fixed(512), // Start with a reasonable default
         };
 
         debug!(
             "Selected audio config: sample_rate={}, channels={}, format={:?}",
-            config.sample_rate.0,
+            config.sample_rate,
             config.channels,
             config_range.sample_format()
         );
@@ -405,20 +410,21 @@ impl AudioStream {
         };
 
         // Error callback
-        let error_callback = {
-            let _state = self.state.clone();
-            move |err: StreamError| {
-                error!("Audio stream error: {}", err);
-            }
-        };
+        // TODO: fix, part of port to cpal 0.18.1 from 0.16.0
+        // let error_callback = {
+        //     let _state = self.state.clone();
+        //     move |err: StreamError| {
+        //         error!("Audio stream error: {}", err);
+        //     }
+        // };
 
         // Build the stream
-        let stream = self
-            .device
-            .cpal_device
-            .build_output_stream(&self.config, callback, error_callback, None)
-            .map_err(StreamingError::BuildStream)?;
-
+        // let stream = self
+        //     .device
+        //     .cpal_device
+        //     .build_output_stream(&self.config, callback, error_callback, None)
+        //     .map_err(StreamingError::BuildStream)?;
+        let stream = self.device.cpal_device.build_output_stream(self.config, callback, |_| {}, None).unwrap(); // TODO: fix unwrap
         Ok(stream)
     }
 

@@ -1,5 +1,8 @@
 use crate::streaming::error::StreamingResult;
-use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::{
+    DeviceDescription,
+    traits::{DeviceTrait, HostTrait},
+};
 use tracing::error;
 
 pub struct DeviceManager {
@@ -9,14 +12,14 @@ pub struct DeviceManager {
 
 #[derive(Clone)]
 pub struct Device {
-    pub name: Option<String>,
+    pub description: DeviceDescription,
     pub cpal_device: cpal::Device,
 }
 
 impl From<cpal::Device> for Device {
     fn from(device: cpal::Device) -> Self {
         Self {
-            name: device.name().inspect_err(|err| error!("failed to get device name: {err}")).ok(),
+            description: device.description().inspect_err(|err| error!("failed to get device description: {err}")).ok().unwrap(),
             cpal_device: device,
         }
     }
@@ -30,7 +33,8 @@ impl DeviceManager {
     /// there's an issue accessing the default audio host.
     pub fn new() -> StreamingResult<Self> {
         let host = cpal::default_host();
-        let devices = host.output_devices()?.map(Into::into).collect();
+        // TODO: get rid of .unwrap() with proper error handling (probably set up in error.rs), part of port to cpal 0.18.1 from 0.16.0
+        let devices = host.output_devices().unwrap().map(Into::into).collect();
         let default_output = host.default_output_device().map(Into::into);
         Ok(Self { devices, default_output })
     }

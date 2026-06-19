@@ -1,11 +1,17 @@
-pub mod time_selection;
-pub mod snapping;
 pub mod clip;
+pub mod snapping;
+pub mod time_selection;
 
-use time_selection::TimeSelection;
 use snapping::Snapping;
+use time_selection::TimeSelection;
 
-use std::{array::from_fn, collections::{HashMap, HashSet}, sync::Arc, ops::Add, range::Range};
+use std::{
+    array::from_fn,
+    collections::{HashMap, HashSet},
+    ops::Add,
+    range::Range,
+    sync::Arc,
+};
 
 use blerp::{Beats, Clip, ClipTiming, ClipTimingBeats, ClipTimingSamples, PlaylistAudio, SAMPLE_RATE, Samples, Time};
 use cpal::{
@@ -13,14 +19,19 @@ use cpal::{
     traits::{DeviceTrait, HostTrait},
 };
 use gpui::{
-    AbsoluteLength, AppContext, Bounds, Context, DefiniteLength, FontWeight, InteractiveElement, IntoElement, Length, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size, StatefulInteractiveElement, Styled, Window, canvas, deferred, div, hsla, img, pattern_slash, point, px, rems, rgb, rgba, size
+    AbsoluteLength, AppContext, Bounds, Context, DefiniteLength, FontWeight, InteractiveElement, IntoElement, Length, MouseButton, ParentElement, PathBuilder, Pixels, Point, Rems, Render, Size,
+    StatefulInteractiveElement, Styled, Window, canvas, deferred, div, hsla, img, pattern_slash, point, px, rems, rgb, rgba, size,
 };
 use gpui_component::scroll::ScrollableElement;
 use itertools::Itertools;
 use tap::{Conv, Pipe, Tap};
 
 use crate::{
-    AUDIO_TRACK_ICON, RECORD_ARM_ICON, RECORD_ICON, SOLO_ICON, components::adjustable_input::AdjustableInput, theme::ThemeColors, components::svg_icon::SvgIcon, views::browser::{Entry, EntryDragPayload}
+    AUDIO_TRACK_ICON, RECORD_ARM_ICON, RECORD_ICON, SOLO_ICON,
+    components::adjustable_input::AdjustableInput,
+    components::svg_icon::SvgIcon,
+    theme::ThemeColors,
+    views::browser::{Entry, EntryDragPayload},
 };
 
 const MIPMAP_HIGH: usize = 1;
@@ -69,12 +80,8 @@ impl PlaylistView {
         device.supported_output_configs().iter_mut().for_each(|item| {
             println!("{:?}", item.next().unwrap().max_sample_rate());
         });
-        let config = device
-            .default_output_config()
-            .unwrap()
-            .config()
-            .tap_mut(|config| config.sample_rate = SampleRate(SAMPLE_RATE as u32));
-        inner.device_out(&device, &config);
+        let config = device.default_output_config().unwrap().config().tap_mut(|config| config.sample_rate = SAMPLE_RATE as u32);
+        inner.device_out(&device, config);
         Self {
             audio: inner,
             zoom: size(rems(16.), rems(4.)),
@@ -116,7 +123,9 @@ impl PlaylistView {
             self.selected_clips.clear();
         } else if let Some(sel) = &self.time_selection {
             let (track_range, time_range) = sel.normalized();
-            if time_range.is_empty() { return; }
+            if time_range.is_empty() {
+                return;
+            }
             self.audio.delete_time_selection(track_range, time_range);
         }
     }
@@ -131,7 +140,9 @@ impl PlaylistView {
             }
         } else if let Some(sel) = &self.time_selection {
             let (track_range, time_range) = sel.normalized();
-            if time_range.is_empty() { return; }
+            if time_range.is_empty() {
+                return;
+            }
             self.audio.duplicate_time_selection(track_range, time_range);
 
             let new_start = sel.end_beats.max(sel.start_beats);
@@ -164,11 +175,7 @@ impl Render for PlaylistView {
 
         let view_width_rems = self.bounds.size.width.as_f32() / rem_size.as_f32();
 
-        let culling_view_width_rems = if self.bounds.size.width.as_f32() == 0.0 {
-            10000.0
-        } else {
-            view_width_rems
-        };
+        let culling_view_width_rems = if self.bounds.size.width.as_f32() == 0.0 { 10000.0 } else { view_width_rems };
 
         let half_screen_rems = view_width_rems / 2.0;
 
@@ -198,10 +205,10 @@ impl Render for PlaylistView {
             if scrolled {
                 self.auto_scroll = false;
                 self.target_pan.x.0 = self.target_pan.x.0.min(0.0);
-                self.pan.x.0 = self.target_pan.x.0; 
+                self.pan.x.0 = self.target_pan.x.0;
 
                 self.audio.seek(Time::Beats(
-                    self.width_to_beats((x - self.bounds.left() - self.pan.x.to_pixels(rem_size)).max(Pixels::from(0.)), rem_size)
+                    self.width_to_beats((x - self.bounds.left() - self.pan.x.to_pixels(rem_size)).max(Pixels::from(0.)), rem_size),
                 ));
                 is_animating = true;
             }
@@ -241,7 +248,11 @@ impl Render for PlaylistView {
         let playhead_x = playhead_absolute_x + self.pan.x;
         let theme = Arc::clone(&self.theme);
 
-        let max_clip_end = self.audio.playlist().tracks().iter()
+        let max_clip_end = self
+            .audio
+            .playlist()
+            .tracks()
+            .iter()
             .flat_map(|t| t.clips().iter().map(|c| c.timing.as_beats(tempo).end.f64()))
             .fold(0.0_f64, f64::max);
 
@@ -287,14 +298,17 @@ impl Render for PlaylistView {
                         }
                         cx.notify();
                     }))
-                    .on_mouse_down(MouseButton::Left, cx.listener(|view, event: &gpui::MouseDownEvent, window, cx| {
-                        let x_pos = event.position.x;
-                        view.scrubbing_x = Some(x_pos);
-                        view.audio.seek(Time::Beats(
-                            view.width_to_beats((x_pos - view.bounds.left() - view.pan.x.to_pixels(window.rem_size())).max(Pixels::from(0.)), window.rem_size()),
-                        ));
-                        cx.notify();
-                    }))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, event: &gpui::MouseDownEvent, window, cx| {
+                            let x_pos = event.position.x;
+                            view.scrubbing_x = Some(x_pos);
+                            view.audio.seek(Time::Beats(
+                                view.width_to_beats((x_pos - view.bounds.left() - view.pan.x.to_pixels(window.rem_size())).max(Pixels::from(0.)), window.rem_size()),
+                            ));
+                            cx.notify();
+                        }),
+                    )
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|view, event: &gpui::MouseDownEvent, window, cx| {
@@ -305,10 +319,13 @@ impl Render for PlaylistView {
                             cx.notify();
                         }),
                     )
-                    .on_mouse_up(MouseButton::Left, cx.listener(|view, _, _, cx| {
-                        view.scrubbing_x = None;
-                        cx.notify();
-                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|view, _, _, cx| {
+                            view.scrubbing_x = None;
+                            cx.notify();
+                        }),
+                    )
                     .on_drag(PlayheadScrub, |_, _, _, cx| cx.new(|_| gpui::Empty))
                     .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<PlayheadScrub>, window, cx| {
                         let x_pos = event.event.position.x;
@@ -344,34 +361,28 @@ impl Render for PlaylistView {
                                 self.audio.playhead().beats(tempo).u32() % self.audio.playlist().time_signature.beats_per_measure,
                             ))
                             .child(
-                                div()
-                                    .absolute()
-                                    .top_px()
-                                    .child(
-                                        canvas(
-                                            move |_, _, _| {},
-                                            {
-                                                let value = theme.clone();
-                                                move |bounds, _, window, _cx| {
-                                                    let mut builder = PathBuilder::fill();
-                                                    let top_left = point(bounds.left(), bounds.top());
-                                                    let top_right = point(bounds.right(), bounds.top());
-                                                    let bottom_center = point(bounds.center().x, bounds.bottom());
-                                                    builder.move_to(top_left);
-                                                    builder.line_to(top_right);
-                                                    builder.line_to(bottom_center);
-                                                    if let Ok(path) = builder.build() {
-                                                        window.paint_path(path, Arc::clone(&value).playhead);
-                                                    }
-                                                }
+                                div().absolute().top_px().child(
+                                    canvas(move |_, _, _| {}, {
+                                        let value = theme.clone();
+                                        move |bounds, _, window, _cx| {
+                                            let mut builder = PathBuilder::fill();
+                                            let top_left = point(bounds.left(), bounds.top());
+                                            let top_right = point(bounds.right(), bounds.top());
+                                            let bottom_center = point(bounds.center().x, bounds.bottom());
+                                            builder.move_to(top_left);
+                                            builder.line_to(top_right);
+                                            builder.line_to(bottom_center);
+                                            if let Ok(path) = builder.build() {
+                                                window.paint_path(path, Arc::clone(&value).playhead);
                                             }
-                                        )
-                                        .absolute()
-                                        .top(px(24.))
-                                        .left(px(-8.))
-                                        .w(px(17.))
-                                        .h(px(8.))
-                                    )
+                                        }
+                                    })
+                                    .absolute()
+                                    .top(px(24.))
+                                    .left(px(-8.))
+                                    .w(px(17.))
+                                    .h(px(8.)),
+                                ),
                             )
                             .left(playhead_x),
                     )
@@ -401,14 +412,17 @@ impl Render for PlaylistView {
                     .id("tracks_container")
                     .track_focus(&focus_handle)
                     .overflow_y_hidden()
-                    .on_mouse_down(MouseButton::Left, cx.listener(|view, _, window, cx| {
-                        view.selected_clips.clear();
-                        view.time_selection = None;
-                        if let Some(focus) = &view.focus_handle {
-                            focus.focus(window, cx);
-                        }
-                        cx.notify();
-                    }))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|view, _, window, cx| {
+                            view.selected_clips.clear();
+                            view.time_selection = None;
+                            if let Some(focus) = &view.focus_handle {
+                                focus.focus(window, cx);
+                            }
+                            cx.notify();
+                        }),
+                    )
                     .on_key_down(cx.listener(|view, event: &gpui::KeyDownEvent, _, cx| {
                         let key = event.keystroke.key.as_str();
                         if key.eq_ignore_ascii_case("delete") || key.eq_ignore_ascii_case("backspace") {
@@ -429,7 +443,9 @@ impl Render for PlaylistView {
                         let dy = event.event.position.y - start_pos.y;
 
                         let mut dx_beats = view.width_to_beats(dx.abs(), window.rem_size());
-                        if dx < Pixels::ZERO { dx_beats = Beats::new(-dx_beats.f64()); }
+                        if dx < Pixels::ZERO {
+                            dx_beats = Beats::new(-dx_beats.f64());
+                        }
 
                         let track_height = view.zoom.height.to_pixels(window.rem_size());
                         let mut track_offset = (dy.as_f32() / track_height.as_f32()).round() as i32;
@@ -469,11 +485,17 @@ impl Render for PlaylistView {
 
                                 let target_track_idx = (*initial_t_idx as i32 + track_offset) as usize;
 
-                                new_positions.insert(*id, (target_track_idx, ClipTiming::Beats(ClipTimingBeats {
-                                    start: Beats::new(new_start),
-                                    end: Beats::new(new_start + len),
-                                    offset: initial_beats.offset,
-                                })));
+                                new_positions.insert(
+                                    *id,
+                                    (
+                                        target_track_idx,
+                                        ClipTiming::Beats(ClipTimingBeats {
+                                            start: Beats::new(new_start),
+                                            end: Beats::new(new_start + len),
+                                            offset: initial_beats.offset,
+                                        }),
+                                    ),
+                                );
                             }
 
                             view.audio.move_clips(new_positions);
@@ -615,7 +637,7 @@ impl Render for PlaylistView {
                                 let min_pan_y = -(total_height_rems + 2.0 - view_height_rems).max(0.0);
                                 view.target_pan.y.0 = view.target_pan.y.0.clamp(min_pan_y, 0.0);
                                 view.pan.y.0 = view.pan.y.0.clamp(min_pan_y, 0.0);
-                                
+
                                 cx.notify();
                             }))
                             .on_scroll_wheel(cx.listener(|view, event: &gpui::ScrollWheelEvent, window, cx| {
@@ -650,7 +672,7 @@ impl Render for PlaylistView {
                                     view.target_pan.y.0 = view.target_pan.y.0.min(0.);
                                     view.pan.x.0 = view.pan.x.0.min(0.);
                                     view.pan.y.0 = view.pan.y.0.min(0.);
-                                    
+
                                     let view_height_rems = (view.bounds.size.height.as_f32() / window.rem_size().as_f32()) - 2.0;
                                     let total_height_rems = view.audio.playlist().tracks().len() as f32 * view.zoom.height.0;
                                     let min_pan_y = -(total_height_rems + 2.0 - view_height_rems).max(0.0);
@@ -663,9 +685,9 @@ impl Render for PlaylistView {
                                     }
                                     view.target_pan.x = rems(view.target_pan.x.0 + (delta.x.as_f32() / window.rem_size().as_f32()));
                                     view.target_pan.y = rems(view.target_pan.y.0 + (delta.y.as_f32() / window.rem_size().as_f32()));
-                                    
+
                                     view.target_pan.x.0 = view.target_pan.x.0.min(0.);
-                                    
+
                                     let view_height_rems = (view.bounds.size.height.as_f32() / window.rem_size().as_f32()) - 2.0;
                                     let total_height_rems = view.audio.playlist().tracks().len() as f32 * view.zoom.height.0;
                                     let min_pan_y = -(total_height_rems + 2.0 - view_height_rems).max(0.0);
@@ -693,7 +715,8 @@ impl Render for PlaylistView {
 
                                         for beat in 0..=total_beats {
                                             let top = bounds.origin.tap_mut(|point| {
-                                                point.x += (view.beats_to_width(Beats::from_u32(beat)) + rems(view.pan.x.0.rem_euclid(view.zoom.width.0) - view.zoom.width.0)).to_pixels(window.rem_size());
+                                                point.x +=
+                                                    (view.beats_to_width(Beats::from_u32(beat)) + rems(view.pan.x.0.rem_euclid(view.zoom.width.0) - view.zoom.width.0)).to_pixels(window.rem_size());
                                             });
                                             let bottom = top.tap_mut(|point| point.y = bounds.bottom());
 
@@ -709,7 +732,8 @@ impl Render for PlaylistView {
                                                 for step in 1..snap_divisor {
                                                     let step_beat_f = beat as f64 + step as f64 / snap_divisor as f64;
                                                     let step_top = bounds.origin.tap_mut(|point| {
-                                                        point.x += (view.beats_to_width(Beats::new(step_beat_f)) + rems(view.pan.x.0.rem_euclid(view.zoom.width.0) - view.zoom.width.0)).to_pixels(window.rem_size());
+                                                        point.x += (view.beats_to_width(Beats::new(step_beat_f)) + rems(view.pan.x.0.rem_euclid(view.zoom.width.0) - view.zoom.width.0))
+                                                            .to_pixels(window.rem_size());
                                                     });
                                                     let step_bottom = step_top.tap_mut(|point| point.y = bounds.bottom());
                                                     step_builder.move_to(step_top);
@@ -740,41 +764,37 @@ impl Render for PlaylistView {
                                     .children(self.audio.playlist().tracks().iter().enumerate().map(|(track_index, track)| {
                                         div()
                                             .id(format!("track_bg_{}", track_index))
-                                            .child(
-                                                div()
-                                                    .absolute()
-                                                    .w_full()
-                                                    .h_full()
-                                                    .border_b_1()
-                                                    .border_color(rgba(0xffffff04))
-                                            )
+                                            .child(div().absolute().w_full().h_full().border_b_1().border_color(rgba(0xffffff04)))
                                             .relative()
                                             .h(self.zoom.height)
-                                            .on_mouse_down(MouseButton::Left, cx.listener(move |view, event: &gpui::MouseDownEvent, window, cx| {
-                                                cx.stop_propagation();
-                                                view.selected_clips.clear();
-                                                let x_pos = event.position.x - view.bounds.left() - view.pan.x.to_pixels(window.rem_size());
-                                                let mut beats = view.width_to_beats(x_pos.max(Pixels::ZERO), window.rem_size()).f64();
+                                            .on_mouse_down(
+                                                MouseButton::Left,
+                                                cx.listener(move |view, event: &gpui::MouseDownEvent, window, cx| {
+                                                    cx.stop_propagation();
+                                                    view.selected_clips.clear();
+                                                    let x_pos = event.position.x - view.bounds.left() - view.pan.x.to_pixels(window.rem_size());
+                                                    let mut beats = view.width_to_beats(x_pos.max(Pixels::ZERO), window.rem_size()).f64();
 
-                                                if !event.modifiers.alt {
-                                                    if let Snapping::Beats { divisor } = view.snapping {
-                                                        let snap_interval = 1.0 / divisor as f64;
-                                                        beats = (beats / snap_interval).round() * snap_interval;
+                                                    if !event.modifiers.alt {
+                                                        if let Snapping::Beats { divisor } = view.snapping {
+                                                            let snap_interval = 1.0 / divisor as f64;
+                                                            beats = (beats / snap_interval).round() * snap_interval;
+                                                        }
                                                     }
-                                                }
 
-                                                view.time_selection = Some(TimeSelection {
-                                                    start_track: track_index,
-                                                    end_track: track_index,
-                                                    start_beats: beats,
-                                                    end_beats: beats,
-                                                });
-                                                view.time_selection_start_pos = Some(event.position);
-                                                if let Some(focus) = &view.focus_handle {
-                                                    focus.focus(window, cx);
-                                                }
-                                                cx.notify();
-                                            }))
+                                                    view.time_selection = Some(TimeSelection {
+                                                        start_track: track_index,
+                                                        end_track: track_index,
+                                                        start_beats: beats,
+                                                        end_beats: beats,
+                                                    });
+                                                    view.time_selection_start_pos = Some(event.position);
+                                                    if let Some(focus) = &view.focus_handle {
+                                                        focus.focus(window, cx);
+                                                    }
+                                                    cx.notify();
+                                                }),
+                                            )
                                             .on_drag(TimeSelectionDrag(track_index), |_, _, _, cx| cx.new(|_| gpui::Empty))
                                             .children(track.clips().iter().filter_map(|clip| {
                                                 let beats = clip.timing.as_beats(tempo);
@@ -782,7 +802,21 @@ impl Render for PlaylistView {
                                                 let length = self.beats_to_width(beats.len());
                                                 let tempo_length = self.beats_to_width(clip.data_len().beats(tempo));
 
-                                                clip::clip(beats, start, length, tempo_length, self.selected_clips.clone(), culling_view_width_rems, clip, track, tempo, track_index, theme.clone(), window, cx)
+                                                clip::clip(
+                                                    beats,
+                                                    start,
+                                                    length,
+                                                    tempo_length,
+                                                    self.selected_clips.clone(),
+                                                    culling_view_width_rems,
+                                                    clip,
+                                                    track,
+                                                    tempo,
+                                                    track_index,
+                                                    theme.clone(),
+                                                    window,
+                                                    cx,
+                                                )
                                             }))
                                             .child({
                                                 div()
@@ -793,44 +827,69 @@ impl Render for PlaylistView {
                                                     .w(gpui::Pixels::from(200.))
                                                     .pr(gpui::Pixels::from(50.))
                                                     .bg(rgb(track.color))
-                                                    .child(div().absolute().w_full().mt(Pixels::from(12.)).pl(Pixels::from(4.)).ml(Pixels::from(-4.)).bg(rgba(0x000000d0)).rounded(px(5.)).h(self.zoom.height.to_pixels(Pixels::from(16.)) - Pixels::from(18.)))
+                                                    .child(
+                                                        div()
+                                                            .absolute()
+                                                            .w_full()
+                                                            .mt(Pixels::from(12.))
+                                                            .pl(Pixels::from(4.))
+                                                            .ml(Pixels::from(-4.))
+                                                            .bg(rgba(0x000000d0))
+                                                            .rounded(px(5.))
+                                                            .h(self.zoom.height.to_pixels(Pixels::from(16.)) - Pixels::from(18.)),
+                                                    )
                                                     .rounded_md()
                                                     .border_1()
                                                     .border_color(rgba(0x00000040))
                                                     .text_color(rgba(0x000000a0))
                                                     .id(track_index)
-                                                    .on_mouse_down(MouseButton::Left, cx.listener(|_, _: &gpui::MouseDownEvent, _, cx| {
-                                                        cx.stop_propagation();
-                                                    }))
+                                                    .on_mouse_down(
+                                                        MouseButton::Left,
+                                                        cx.listener(|_, _: &gpui::MouseDownEvent, _, cx| {
+                                                            cx.stop_propagation();
+                                                        }),
+                                                    )
                                                     .overflow_y_hidden()
                                                     .line_height(DefiniteLength::Fraction(0.8))
                                                     .text_sm()
                                                     .p_1()
-                                                    .child(div().font_family("Inter").font_weight(FontWeight::BOLD).child(
+                                                    .child(
+                                                        div().font_family("Inter").font_weight(FontWeight::BOLD).child(
+                                                            div()
+                                                                .flex()
+                                                                .flex_row()
+                                                                .items_center()
+                                                                .h(gpui::Pixels::from(12.))
+                                                                .child(div().child(SvgIcon::new(AUDIO_TRACK_ICON, 16, 16)).mt(gpui::Pixels::from(-3.)).mr(gpui::Pixels::from(2.)).opacity(0.6))
+                                                                .child(format!("Track {}", track_index + 1)),
+                                                        ),
+                                                    )
+                                                    .child(
                                                         div()
+                                                            .text_xs()
+                                                            .text_color(rgba(0xffffffa0))
                                                             .flex()
-                                                            .flex_row()
+                                                            .gap_1()
                                                             .items_center()
-                                                            .h(gpui::Pixels::from(12.))
-                                                            .child(div().child(SvgIcon::new(AUDIO_TRACK_ICON, 16, 16)).mt(gpui::Pixels::from(-3.)).mr(gpui::Pixels::from(2.)).opacity(0.6))
-                                                            .child(format!("Track {}", track_index + 1))
-                                                    ))
-                                                    .child(div().text_xs().text_color(rgba(0xffffffa0)).flex().gap_1().items_center().child("Gain").child(AdjustableInput {
-                                                        value: 20. * track.gain.log10(),
-                                                        theme: Arc::clone(&theme),
-                                                        set: {
-                                                            let view = cx.entity().downgrade();
-                                                            Arc::new(move |gain, cx| {
-                                                                view.upgrade().unwrap().update(cx, move |view, _| {
-                                                                    view.audio.update_track_gain(track_index, 10_f32.powf(gain / 20.));
-                                                                });
-                                                                cx.notify(view.entity_id());
+                                                            .child("Gain")
+                                                            .child(AdjustableInput {
+                                                                value: 20. * track.gain.log10(),
+                                                                theme: Arc::clone(&theme),
+                                                                set: {
+                                                                    let view = cx.entity().downgrade();
+                                                                    Arc::new(move |gain, cx| {
+                                                                        view.upgrade().unwrap().update(cx, move |view, _| {
+                                                                            view.audio.update_track_gain(track_index, 10_f32.powf(gain / 20.));
+                                                                        });
+                                                                        cx.notify(view.entity_id());
+                                                                    })
+                                                                },
+                                                                scale: 0.01,
+                                                                name: format!("Track {} gain", track_index + 1).into(),
+                                                                default: 0.,
                                                             })
-                                                        },
-                                                        scale: 0.01,
-                                                        name: format!("Track {} gain", track_index + 1).into(),
-                                                        default: 0.,
-                                                    }).child("dB"))
+                                                            .child("dB"),
+                                                    )
                                                     .child(
                                                         div()
                                                             .absolute()
@@ -861,62 +920,51 @@ impl Render for PlaylistView {
                                                                     .on_click(cx.listener(move |view, _, _, _| {
                                                                         let enabled = view.audio.playlist().tracks().get(track_index).map(|t| t.enabled).unwrap_or(false);
                                                                         view.audio.update_track_enabled(track_index, !enabled);
-                                                                    }))
+                                                                    })),
                                                             )
                                                             .child(
-                                                                div()
-                                                                    .flex()
-                                                                    .flex_col()
-                                                                    .items_center()
-                                                                    .justify_center()
-                                                                    .mt(px(5.))
-                                                                    .child(
-                                                                        div()
-                                                                            .flex()
-                                                                            .flex_row()
-                                                                            .items_center()
-                                                                            .justify_center()
-                                                                            .gap(px(4.))
-                                                                            .child(
-                                                                                div()
-                                                                                    .id(format!("Track {} solo", track_index + 1))
-                                                                                    .flex()
-                                                                                    .items_center()
-                                                                                    .justify_center()
-                                                                                    .h_4()
-                                                                                    .w_4()
-                                                                                    .rounded_sm()
-                                                                                    .bg(rgba(0x171717a0))
-                                                                                    .border_color(rgba(0x00000080))
-                                                                                    .child(SvgIcon::new(SOLO_ICON, 12, 12))
-                                                                            )
-                                                                            .child(
-                                                                                div()
-                                                                                    .id(format!("Track {} record arm", track_index + 1))
-                                                                                    .flex()
-                                                                                    .items_center()
-                                                                                    .justify_center()
-                                                                                    .h_4()
-                                                                                    .w_4()
-                                                                                    .rounded_sm()
-                                                                                    .bg(rgba(0x171717a0))
-                                                                                    .border_color(rgba(0x00000080))
-                                                                                    .child(SvgIcon::new(RECORD_ARM_ICON, 12, 12))
-                                                                            )
-                                                                    )
-                                                            )
+                                                                div().flex().flex_col().items_center().justify_center().mt(px(5.)).child(
+                                                                    div()
+                                                                        .flex()
+                                                                        .flex_row()
+                                                                        .items_center()
+                                                                        .justify_center()
+                                                                        .gap(px(4.))
+                                                                        .child(
+                                                                            div()
+                                                                                .id(format!("Track {} solo", track_index + 1))
+                                                                                .flex()
+                                                                                .items_center()
+                                                                                .justify_center()
+                                                                                .h_4()
+                                                                                .w_4()
+                                                                                .rounded_sm()
+                                                                                .bg(rgba(0x171717a0))
+                                                                                .border_color(rgba(0x00000080))
+                                                                                .child(SvgIcon::new(SOLO_ICON, 12, 12)),
+                                                                        )
+                                                                        .child(
+                                                                            div()
+                                                                                .id(format!("Track {} record arm", track_index + 1))
+                                                                                .flex()
+                                                                                .items_center()
+                                                                                .justify_center()
+                                                                                .h_4()
+                                                                                .w_4()
+                                                                                .rounded_sm()
+                                                                                .bg(rgba(0x171717a0))
+                                                                                .border_color(rgba(0x00000080))
+                                                                                .child(SvgIcon::new(RECORD_ARM_ICON, 12, 12)),
+                                                                        ),
+                                                                ),
+                                                            ),
                                                     )
                                                     .child(if !track.enabled {
-                                                        div()
-                                                            .absolute()
-                                                            .inset_0()
-                                                            .bg(rgba(0x171717a0))
-                                                            .rounded(px(5.))
+                                                        div().absolute().inset_0().bg(rgba(0x171717a0)).rounded(px(5.))
                                                     } else {
-                                                        div()
-                                                            .absolute()
+                                                        div().absolute()
                                                     })
-                                                    // .pipe(deferred)
+                                                // .pipe(deferred)
                                             })
                                             .child(
                                                 div()
@@ -928,7 +976,10 @@ impl Render for PlaylistView {
                                                     .drag_over(move |style, _: &EntryDragPayload, _, _| style.visible())
                                                     .on_drop(cx.listener(move |view, EntryDragPayload(Entry { path, .. }), window, cx| {
                                                         let start =
-                                                            Time::Beats(view.width_to_beats(window.mouse_position().relative_to(&view.bounds.origin).x - view.pan.x.to_pixels(window.rem_size()), window.rem_size()));
+                                                            Time::Beats(view.width_to_beats(
+                                                                window.mouse_position().relative_to(&view.bounds.origin).x - view.pan.x.to_pixels(window.rem_size()),
+                                                                window.rem_size(),
+                                                            ));
                                                         view.audio.update_playlist(|playlist| {
                                                             playlist.add_clips(track_index, Arc::clone(&path), start);
                                                         });
@@ -953,13 +1004,7 @@ impl Render for PlaylistView {
                                         let width = self.beats_to_width(Beats::new(time_range.end)) - self.beats_to_width(Beats::new(time_range.start));
 
                                         if time_range.start == time_range.end {
-                                            div()
-                                                .absolute()
-                                                .top(top)
-                                                .left(left)
-                                                .w(px(1.))
-                                                .h(height)
-                                                .bg(theme.playhead.tap_mut(|c| c.a = 0.8))
+                                            div().absolute().top(top).left(left).w(px(1.)).h(height).bg(theme.playhead.tap_mut(|c| c.a = 0.8))
                                         } else {
                                             div()
                                                 .absolute()
@@ -967,27 +1012,20 @@ impl Render for PlaylistView {
                                                 .left(left)
                                                 .w(width)
                                                 .h(height)
-                                                .bg(gpui::hsla(200./360., 0.8, 0.5, 0.3))
+                                                .bg(gpui::hsla(200. / 360., 0.8, 0.5, 0.3))
                                                 .border_1()
-                                                .border_color(gpui::hsla(200./360., 0.8, 0.5, 0.8))
+                                                .border_color(gpui::hsla(200. / 360., 0.8, 0.5, 0.8))
                                         }
-                                    }))
+                                    })),
                             )
                             .children(
                                 self.hovered_position
                                     .map(|hovered_position| div().w_px().bg(theme.playhead_hover).absolute().top_0().bottom_0().left(hovered_position.x)),
                             )
-                            .child(
-                                div()
-                                    .w_px()
-                                    .bg(theme.playhead)
-                                    .absolute()
-                                    .top_0()
-                                    .bottom_0()
-                                    .left(playhead_x)
-                            )
+                            .child(div().w_px().bg(theme.playhead).absolute().top_0().bottom_0().left(playhead_x))
                             .children(self.audio.playlist().preview.into_iter().flat_map(|preview| {
-                                let timing = preview.as_beats(tempo);[timing.start, timing.end].map(|time| {
+                                let timing = preview.as_beats(tempo);
+                                [timing.start, timing.end].map(|time| {
                                     div()
                                         .w_px()
                                         .bg(theme.preview)
@@ -997,7 +1035,7 @@ impl Render for PlaylistView {
                                         .left(rems(time.f32() / self.audio.playlist().time_signature.beats_per_measure as f32 * self.zoom.width.0) + self.pan.x)
                                 })
                             })),
-                    )
+                    ),
             )
             .child(
                 div()
@@ -1019,12 +1057,18 @@ impl Render for PlaylistView {
                             .bg(theme.navbar_outline)
                             .hover(|s| s.bg(theme.hover))
                             .cursor_pointer()
-                            .on_mouse_down(MouseButton::Left, cx.listener(|view, event: &gpui::MouseDownEvent, _, _| {
-                                view.last_scrollbar_mouse_pos = Some(event.position);
-                            }))
-                            .on_mouse_up(MouseButton::Left, cx.listener(|view, _, _, _| {
-                                view.last_scrollbar_mouse_pos = None;
-                            }))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|view, event: &gpui::MouseDownEvent, _, _| {
+                                    view.last_scrollbar_mouse_pos = Some(event.position);
+                                }),
+                            )
+                            .on_mouse_up(
+                                MouseButton::Left,
+                                cx.listener(|view, _, _, _| {
+                                    view.last_scrollbar_mouse_pos = None;
+                                }),
+                            )
                             .on_drag(ScrollbarDrag, |_, _, _, cx| cx.new(|_| gpui::Empty))
                             .on_drag_move(cx.listener(|view, event: &gpui::DragMoveEvent<ScrollbarDrag>, window, cx| {
                                 view.auto_scroll = false;
@@ -1037,7 +1081,11 @@ impl Render for PlaylistView {
                                 view.last_scrollbar_mouse_pos = Some(current_pos);
 
                                 let tempo = view.audio.playlist().tempo;
-                                let max_clip_end = view.audio.playlist().tracks().iter()
+                                let max_clip_end = view
+                                    .audio
+                                    .playlist()
+                                    .tracks()
+                                    .iter()
                                     .flat_map(|t| t.clips().iter().map(|c| c.timing.as_beats(tempo).end.f64()))
                                     .fold(0.0_f64, f64::max);
 
@@ -1065,8 +1113,8 @@ impl Render for PlaylistView {
 
                                 view.target_pan.x.0 = view.target_pan.x.0.min(0.);
                                 cx.notify();
-                            }))
-                    )
+                            })),
+                    ),
             )
     }
 }
