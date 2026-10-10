@@ -7,7 +7,7 @@ Feel free to make improvements and additions to the DAW, and submit a PR!
 Additionally, you can also open issues with the DAW.
 
 ## Our community
-You can join our official Volt Community Discord server at https://discord.gg/PDYpvar9Vu!
+You can join our official Volt Community Discord server at https://discord.gg/QtYXsnu7jQ!
 Feel free to discuss anything related to Volt there, as well as music production.
 
 ## Current state
