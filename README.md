@@ -10,6 +10,9 @@ Additionally, you can also open issues with the DAW.
 You can join our official Volt Community Discord server at https://discord.gg/QtYXsnu7jQ!
 Feel free to discuss anything related to Volt there, as well as music production.
 
+We also have an official website at https://voltdaw.com/
+It currently details our manifesto and goal for the project.
+
 ## Current state
 
 The DAW at the moment is highly unfinished and is currently primarily in the testing phase.
@@ -92,6 +95,7 @@ We have a list of things we want to achieve, and here it is for easy editing and
         - [ ] Converting audio to MIDI using Machine Learning tools
         - [ ] Audio declipping using Machine Learning tools
         - [ ] Audio BPM detection
+- [ ] Live collaboration
 
 The roadmap is still very work-in-progress, we're structuring it as we go, not everything may be mentioned.
 
